@@ -85,12 +85,47 @@ pub struct VpnHide {
 // Single-threaded access by construction.
 unsafe impl Sync for VpnHide {}
 
+/// Cached targets loaded in on_load (zygote context, before any fork).
+/// Survives across fork — child processes inherit the memory.
+static CACHED_TARGETS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+fn load_targets() -> Vec<String> {
+    let content = fs::read_to_string(TARGETS_FILE)
+        .or_else(|_| fs::read_to_string(TARGETS_FILE_MODULE))
+        .or_else(|_| fs::read_to_string(TARGETS_FILE_TMP));
+
+    match content {
+        Ok(content) => content
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    None
+                } else {
+                    Some(line.to_string())
+                }
+            })
+            .collect(),
+        Err(e) => {
+            log::warn!("can't read targets ({e}); no targets active");
+            Vec::new()
+        }
+    }
+}
+
 impl ZygiskModule for VpnHide {
     type Api = V5;
 
     fn on_load(&self, _api: ZygiskApi<'_, V5>, _env: JNIEnv<'_>) {
         init_logger();
-        debug!("on_load");
+        // Cache targets while still running as zygote (root, permissive
+        // SELinux context). After fork + setuid, /data/adb/ is no longer
+        // readable on Magisk.
+        CACHED_TARGETS.get_or_init(load_targets);
+        debug!(
+            "on_load: {} targets cached",
+            CACHED_TARGETS.get().map_or(0, |v| v.len())
+        );
     }
 
     fn pre_app_specialize<'a>(
@@ -99,10 +134,6 @@ impl ZygiskModule for VpnHide {
         env: JNIEnv<'a>,
         args: &'a mut AppSpecializeArgs<'_>,
     ) {
-        // pre_app_specialize runs on the zygote side BEFORE uid drop, so
-        // we can still read /data/adb/modules/... targets.txt here. Read
-        // nice_name, gate on the allowlist, and either set the flag or
-        // tell Zygisk to dlclose us after this callback returns.
         let package = read_jstring(&env, args.nice_name);
         match package.as_deref() {
             Some(p) if is_targeted(p) => {
@@ -110,7 +141,6 @@ impl ZygiskModule for VpnHide {
                 self.is_target.set(true);
             }
             _ => {
-                // Not a target. Unload on return to reclaim memory.
                 self.is_target.set(false);
                 mark_cleanup(&mut api);
             }
@@ -311,28 +341,17 @@ fn scrub_shadowhook_maps() {
 /// per app in `targets.txt` covers all of its subprocesses.
 #[inline(never)]
 fn is_targeted(package: &str) -> bool {
+    let targets = match CACHED_TARGETS.get() {
+        Some(t) => t,
+        None => return false,
+    };
+
     let base_package = match package.split_once(':') {
         Some((base, _)) => base,
         None => package,
     };
 
-    let content = fs::read_to_string(TARGETS_FILE)
-        .or_else(|_| fs::read_to_string(TARGETS_FILE_MODULE))
-        .or_else(|_| fs::read_to_string(TARGETS_FILE_TMP));
-
-    match content {
-        Ok(content) => content.lines().any(|line| {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                return false;
-            }
-            line == package || line == base_package
-        }),
-        Err(e) => {
-            log::warn!("is_targeted: can't read targets ({e}); no targets active");
-            false
-        }
-    }
+    targets.iter().any(|t| t == package || t == base_package)
 }
 
 /// Decode a `JString` (as stored in `AppSpecializeArgs::nice_name`) into
