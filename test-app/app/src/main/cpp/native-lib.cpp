@@ -177,6 +177,11 @@ static std::string check_proc_file(const char* path) {
     LOGI("=== CHECK: %s (native read) ===", path);
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
+        if (errno == EACCES || errno == EPERM) {
+            std::string r = "PASS: access denied by SELinux (" + std::string(strerror(errno)) + ") — app cannot read " + path;
+            LOGI("RESULT: %s", r.c_str());
+            return r;
+        }
         std::string r = "FAIL: cannot open " + std::string(path) + ": " + strerror(errno);
         LOGI("RESULT: %s", r.c_str());
         return r;
@@ -251,6 +256,11 @@ Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkNetlinkGetlink(JNIEnv* env, jo
     if (bind(fd, (struct sockaddr*)&sa, sizeof(sa)) < 0) {
         int err = errno;
         close(fd);
+        if (err == EACCES || err == EPERM) {
+            std::string r = "PASS: netlink bind denied by SELinux (" + std::string(strerror(err)) + ") — app cannot enumerate interfaces";
+            LOGI("RESULT: %s", r.c_str());
+            return to_jstring(env, r);
+        }
         std::string r = "FAIL: bind error: " + std::string(strerror(err));
         LOGI("RESULT: %s", r.c_str());
         return to_jstring(env, r);

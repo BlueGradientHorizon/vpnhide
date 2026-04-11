@@ -9,7 +9,10 @@
  *
  * Hooks:
  *   - dev_ioctl: filters SIOCGIFFLAGS / SIOCGIFNAME
+ *   - dev_ifconf: filters SIOCGIFCONF interface enumeration
  *   - rtnl_fill_ifinfo: filters RTM_NEWLINK netlink dumps (getifaddrs)
+ *   - inet6_fill_ifaddr: filters RTM_GETADDR IPv6 responses (getifaddrs)
+ *   - inet_fill_ifaddr: filters RTM_GETADDR IPv4 responses (getifaddrs)
  *   - fib_route_seq_show: filters /proc/net/route entries
  *
  * Target UIDs are written to /proc/vpnhide_targets from userspace.
@@ -30,6 +33,8 @@
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/skbuff.h>
+#include <linux/inetdevice.h>
+#include <net/if_inet6.h>
 
 #define MODNAME "vpnhide"
 #define MAX_TARGET_UIDS 64
@@ -232,7 +237,84 @@ static struct kretprobe dev_ioctl_krp = {
 };
 
 /* ================================================================== */
-/*  Hook 2: rtnl_fill_ifinfo — netlink RTM_NEWLINK (getifaddrs path)  */
+/*  Hook 2: dev_ifconf — SIOCGIFCONF interface enumeration            */
+/*                                                                    */
+/*  dev_ifconf(struct net *net, struct ifconf __user *uifc)           */
+/*  arm64: x0=net, x1=uifc (__user pointer)                          */
+/*                                                                    */
+/*  After dev_ifconf returns, the userspace buffer contains ifreq     */
+/*  entries. We compact out VPN entries and update ifc_len.           */
+/* ================================================================== */
+
+struct dev_ifconf_data {
+	struct ifconf __user *uifc;
+	bool target;
+};
+
+static int dev_ifconf_entry(struct kretprobe_instance *ri,
+			    struct pt_regs *regs)
+{
+	struct dev_ifconf_data *data = (void *)ri->data;
+
+	data->uifc = (struct ifconf __user *)regs->regs[1];
+	data->target = is_target_uid();
+	return 0;
+}
+
+static int dev_ifconf_ret(struct kretprobe_instance *ri,
+			  struct pt_regs *regs)
+{
+	struct dev_ifconf_data *data = (void *)ri->data;
+	struct ifconf ifc;
+	struct ifreq __user *usr_ifr;
+	struct ifreq tmp;
+	int i, n, dst;
+
+	if (!data->target || regs_return_value(regs) != 0 || !data->uifc)
+		return 0;
+
+	if (copy_from_user(&ifc, data->uifc, sizeof(ifc)))
+		return 0;
+	if (!ifc.ifc_req || ifc.ifc_len <= 0)
+		return 0;
+
+	n = ifc.ifc_len / (int)sizeof(struct ifreq);
+	usr_ifr = ifc.ifc_req;
+	dst = 0;
+
+	for (i = 0; i < n; i++) {
+		if (copy_from_user(&tmp, &usr_ifr[i], sizeof(tmp)))
+			break;
+		tmp.ifr_name[IFNAMSIZ - 1] = '\0';
+		if (is_vpn_ifname(tmp.ifr_name))
+			continue;
+		if (dst != i) {
+			if (copy_to_user(&usr_ifr[dst], &tmp, sizeof(tmp)))
+				break;
+		}
+		dst++;
+	}
+
+	if (dst < n) {
+		ifc.ifc_len = dst * (int)sizeof(struct ifreq);
+		/* dev_ifconf writes ifc_len via put_user, so we overwrite */
+		if (put_user(ifc.ifc_len, &data->uifc->ifc_len))
+			return 0;
+	}
+
+	return 0;
+}
+
+static struct kretprobe dev_ifconf_krp = {
+	.handler	= dev_ifconf_ret,
+	.entry_handler	= dev_ifconf_entry,
+	.data_size	= sizeof(struct dev_ifconf_data),
+	.maxactive	= 20,
+	.kp.symbol_name	= "dev_ifconf",
+};
+
+/* ================================================================== */
+/*  Hook 3: rtnl_fill_ifinfo — netlink RTM_NEWLINK (getifaddrs path)  */
 /*                                                                    */
 /*  rtnl_fill_ifinfo fills one interface's data into a netlink skb    */
 /*  during a RTM_GETLINK dump. If the device is a VPN and the caller  */
@@ -287,7 +369,132 @@ static struct kretprobe rtnl_fill_krp = {
 };
 
 /* ================================================================== */
-/*  Hook 3: fib_route_seq_show — /proc/net/route                      */
+/*  Hook 4: inet6_fill_ifaddr — RTM_GETADDR IPv6 (getifaddrs path)   */
+/*                                                                    */
+/*  inet6_fill_ifaddr(struct sk_buff *skb, struct inet6_ifaddr *ifa,  */
+/*                    struct inet6_fill_args *args)                   */
+/*  arm64: x0=skb, x1=ifa                                           */
+/*                                                                    */
+/*  getifaddrs() does RTM_GETLINK (filtered by hook 3) then          */
+/*  RTM_GETADDR. Addresses for VPN interfaces still appear in        */
+/*  RTM_GETADDR, so bionic reconstructs a tun0 entry with flags=0.  */
+/*  Filtering here prevents that.                                    */
+/*                                                                    */
+/*  We can't return -EMSGSIZE (causes infinite retry on empty skb).  */
+/*  Instead, save skb->len before and trim the skb back on return,   */
+/*  making it look like the entry was never written. Return 0.       */
+/* ================================================================== */
+
+struct inet6_fill_data {
+	struct sk_buff *skb;
+	unsigned int saved_len;
+	bool should_filter;
+};
+
+static int inet6_fill_entry(struct kretprobe_instance *ri,
+			    struct pt_regs *regs)
+{
+	struct inet6_fill_data *data = (void *)ri->data;
+	struct inet6_ifaddr *ifa;
+
+	data->should_filter = false;
+
+	if (!is_target_uid())
+		return 0;
+
+	ifa = (struct inet6_ifaddr *)regs->regs[1];
+	if (ifa && ifa->idev && ifa->idev->dev &&
+	    is_vpn_ifname(ifa->idev->dev->name)) {
+		data->skb = (struct sk_buff *)regs->regs[0];
+		data->saved_len = data->skb ? data->skb->len : 0;
+		data->should_filter = true;
+	}
+
+	return 0;
+}
+
+static int inet6_fill_ret(struct kretprobe_instance *ri,
+			  struct pt_regs *regs)
+{
+	struct inet6_fill_data *data = (void *)ri->data;
+
+	if (!data->should_filter || !data->skb)
+		return 0;
+
+	/* Undo whatever the fill function wrote to the skb */
+	skb_trim(data->skb, data->saved_len);
+	regs_set_return_value(regs, 0);
+	return 0;
+}
+
+static struct kretprobe inet6_fill_krp = {
+	.handler	= inet6_fill_ret,
+	.entry_handler	= inet6_fill_entry,
+	.data_size	= sizeof(struct inet6_fill_data),
+	.maxactive	= 20,
+	.kp.symbol_name	= "inet6_fill_ifaddr",
+};
+
+/* ================================================================== */
+/*  Hook 5: inet_fill_ifaddr — RTM_GETADDR IPv4 (getifaddrs path)    */
+/*                                                                    */
+/*  inet_fill_ifaddr(struct sk_buff *skb, struct in_ifaddr *ifa,     */
+/*                   struct inet_fill_args *args)                    */
+/*  arm64: x0=skb, x1=ifa                                           */
+/*  Same skb-trim approach as hook 4.                                */
+/* ================================================================== */
+
+struct inet_fill_data {
+	struct sk_buff *skb;
+	unsigned int saved_len;
+	bool should_filter;
+};
+
+static int inet_fill_entry(struct kretprobe_instance *ri,
+			   struct pt_regs *regs)
+{
+	struct inet_fill_data *data = (void *)ri->data;
+	struct in_ifaddr *ifa;
+
+	data->should_filter = false;
+
+	if (!is_target_uid())
+		return 0;
+
+	ifa = (struct in_ifaddr *)regs->regs[1];
+	if (ifa && ifa->ifa_dev && ifa->ifa_dev->dev &&
+	    is_vpn_ifname(ifa->ifa_dev->dev->name)) {
+		data->skb = (struct sk_buff *)regs->regs[0];
+		data->saved_len = data->skb ? data->skb->len : 0;
+		data->should_filter = true;
+	}
+
+	return 0;
+}
+
+static int inet_fill_ret(struct kretprobe_instance *ri,
+			 struct pt_regs *regs)
+{
+	struct inet_fill_data *data = (void *)ri->data;
+
+	if (!data->should_filter || !data->skb)
+		return 0;
+
+	skb_trim(data->skb, data->saved_len);
+	regs_set_return_value(regs, 0);
+	return 0;
+}
+
+static struct kretprobe inet_fill_krp = {
+	.handler	= inet_fill_ret,
+	.entry_handler	= inet_fill_entry,
+	.data_size	= sizeof(struct inet_fill_data),
+	.maxactive	= 20,
+	.kp.symbol_name	= "inet_fill_ifaddr",
+};
+
+/* ================================================================== */
+/*  Hook 6: fib_route_seq_show — /proc/net/route                      */
 /*                                                                    */
 /*  fib_route_seq_show(struct seq_file *seq, void *v) writes one or  */
 /*  more tab-separated route lines into seq->buf, each ending with   */
@@ -400,9 +607,12 @@ struct kretprobe_reg {
 };
 
 static struct kretprobe_reg probes[] = {
-	{ &dev_ioctl_krp,  "dev_ioctl",        false },
-	{ &rtnl_fill_krp,  "rtnl_fill_ifinfo", false },
-	{ &fib_route_krp,  "fib_route_seq_show", false },
+	{ &dev_ioctl_krp,   "dev_ioctl",          false },
+	{ &dev_ifconf_krp,  "dev_ifconf",         false },
+	{ &rtnl_fill_krp,   "rtnl_fill_ifinfo",   false },
+	{ &inet6_fill_krp,  "inet6_fill_ifaddr",  false },
+	{ &inet_fill_krp,   "inet_fill_ifaddr",   false },
+	{ &fib_route_krp,   "fib_route_seq_show", false },
 };
 
 static int __init vpnhide_init(void)
