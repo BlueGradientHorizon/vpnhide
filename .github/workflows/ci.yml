@@ -132,13 +132,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build APK
-        run: cd lsposed && ./gradlew --no-daemon assembleDebug
+        run: |
+          cd lsposed && ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/vpnhide-lsposed.apk"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: vpnhide-lsposed
-          path: lsposed/app/build/outputs/apk/debug/app-debug.apk
+          path: vpnhide-lsposed.apk
           if-no-files-found: error
 
   test-app:
@@ -173,12 +175,13 @@ jobs:
           . "$HOME/.cargo/env"
           export ANDROID_NDK_HOME=${{ steps.ndk.outputs.ndk-path }}
           cd test-app && ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/vpnhide-test.apk"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: vpnhide-test
-          path: test-app/app/build/outputs/apk/debug/app-debug.apk
+          path: vpnhide-test.apk
           if-no-files-found: error
 
   release:
