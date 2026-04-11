@@ -46,7 +46,7 @@ Install `vpnhide-test.apk` from the release, add it to the target list via WebUI
 | **[kmod/](kmod/)** | Kernel module (C) | `kretprobe` hooks in kernel space. Zero footprint in the target app's process. ([details](kmod/README.md)) |
 | **[lsposed/](lsposed/)** | LSPosed module (Kotlin) | Hooks `writeToParcel` in `system_server` for per-UID Binder filtering. No in-process hooks. ([details](lsposed/README.md)) |
 | **[zygisk/](zygisk/)** | Zygisk module (Rust) | Inline-hooks `libc.so` in the target app's process. Alternative to kmod. ([details](zygisk/README.md)) |
-| **[test-app/](test-app/)** | Diagnostic app (Kotlin + Rust) | 22 checks covering all detection vectors. |
+| **[test-app/](test-app/)** | Diagnostic app (Kotlin + Rust) | 24 checks covering all detection vectors. |
 
 ## Detection coverage
 
@@ -69,15 +69,16 @@ Install `vpnhide-test.apk` from the release, add it to the target list via WebUI
 | 15 | `/sys/class/net/tun0/` | blocked | | | |
 | 16 | `NetworkCapabilities` (hasTransport, NOT_VPN, transportInfo) | | | | x |
 | 17 | `NetworkInfo` (getType, getTypeName) | | | | x |
-| 18 | `ConnectivityManager` (activeNetwork, allNetworks) | | | | x |
-| 19 | `LinkProperties` (interfaceName, routes, DNS) | | | | x |
-| 20 | `NetworkInterface.getNetworkInterfaces()` | | x | x | |
-| 21 | `System.getProperty` (proxy settings) | | | x | |
-| 22 | `/proc/net/route` via Java `FileInputStream` | blocked | x | x | |
+| 18 | `ConnectivityManager.getActiveNetwork()` | | | | x |
+| 19 | `ConnectivityManager.getAllNetworks()` + VPN scan | | | | x |
+| 20 | `LinkProperties` (interfaceName, routes, DNS) | | | | x |
+| 21 | `NetworkInterface.getNetworkInterfaces()` | | x | x | |
+| 22 | `System.getProperty` (proxy settings) | | | x | |
+| 23 | `/proc/net/route` via Java `FileInputStream` | blocked | x | x | |
 
 **blocked** = SELinux denies access for untrusted apps (Android 10+). No hook needed.
 
-Rows 1-4 and 20 are the only vectors reachable by regular apps. Everything else is either blocked by SELinux or goes through Java APIs (covered by lsposed).
+Rows 1-4, 19, and 21 are the only vectors reachable by regular apps. Everything else is either blocked by SELinux or goes through Java APIs (covered by lsposed).
 
 ## Building from source
 
