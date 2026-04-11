@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <net/if.h>
 #include <ifaddrs.h>
+#include <dirent.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_link.h>
@@ -240,6 +241,34 @@ Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetIfInet6(JNIEnv* env, jo
     return to_jstring(env, check_proc_file("/proc/net/if_inet6"));
 }
 
+// Helper: try to open and bind a netlink route socket.
+// Returns fd on success, -1 on failure. Sets result string on SELinux denial.
+static int open_netlink(std::string& err_result) {
+    int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+    if (fd < 0) {
+        if (errno == EACCES || errno == EPERM) {
+            err_result = "PASS: netlink socket denied by SELinux (" + std::string(strerror(errno)) + ")";
+        } else {
+            err_result = "FAIL: cannot create netlink socket: " + std::string(strerror(errno));
+        }
+        return -1;
+    }
+
+    struct sockaddr_nl sa{};
+    sa.nl_family = AF_NETLINK;
+    if (bind(fd, (struct sockaddr*)&sa, sizeof(sa)) < 0) {
+        int err = errno;
+        close(fd);
+        if (err == EACCES || err == EPERM) {
+            err_result = "PASS: netlink bind denied by SELinux (" + std::string(strerror(err)) + ")";
+        } else {
+            err_result = "FAIL: bind error: " + std::string(strerror(err));
+        }
+        return -1;
+    }
+    return fd;
+}
+
 // 6. Netlink RTM_GETLINK
 extern "C" JNIEXPORT jstring JNICALL
 Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkNetlinkGetlink(JNIEnv* env, jobject) {
@@ -332,6 +361,166 @@ Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkNetlinkGetlink(JNIEnv* env, jo
         std::string vpn_list;
         for (auto& n : vpn_found) { if (!vpn_list.empty()) vpn_list += ", "; vpn_list += n; }
         result = "FAIL: VPN interfaces: [" + vpn_list + "] in netlink dump: [" + all_list + "]";
+    }
+    LOGI("RESULT: %s", result.c_str());
+    return to_jstring(env, result);
+}
+
+// 7. netlink RTM_GETROUTE
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkNetlinkGetroute(JNIEnv* env, jobject) {
+    LOGI("=== CHECK: netlink RTM_GETROUTE dump ===");
+    std::string err;
+    int fd = open_netlink(err);
+    if (fd < 0) {
+        LOGI("RESULT: %s", err.c_str());
+        return to_jstring(env, err);
+    }
+
+    struct {
+        struct nlmsghdr nlh;
+        struct rtmsg rtm;
+    } req{};
+    req.nlh.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
+    req.nlh.nlmsg_type = RTM_GETROUTE;
+    req.nlh.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    req.nlh.nlmsg_seq = 1;
+    req.rtm.rtm_family = AF_UNSPEC;
+
+    if (send(fd, &req, req.nlh.nlmsg_len, 0) < 0) {
+        int e = errno;
+        close(fd);
+        std::string r = "FAIL: send error: " + std::string(strerror(e));
+        LOGI("RESULT: %s", r.c_str());
+        return to_jstring(env, r);
+    }
+
+    char buf[32768];
+    std::vector<std::string> vpn_found;
+    int total = 0;
+    bool done = false;
+
+    while (!done) {
+        ssize_t len = recv(fd, buf, sizeof(buf), 0);
+        if (len <= 0) break;
+        for (struct nlmsghdr* nh = (struct nlmsghdr*)buf;
+             NLMSG_OK(nh, (size_t)len); nh = NLMSG_NEXT(nh, len)) {
+            if (nh->nlmsg_type == NLMSG_DONE) { done = true; break; }
+            if (nh->nlmsg_type == NLMSG_ERROR) { done = true; break; }
+            if (nh->nlmsg_type != RTM_NEWROUTE) continue;
+            total++;
+            struct rtmsg* rtm = (struct rtmsg*)NLMSG_DATA(nh);
+            struct rtattr* rta = RTM_RTA(rtm);
+            int rta_len = RTM_PAYLOAD(nh);
+            while (RTA_OK(rta, rta_len)) {
+                if (rta->rta_type == RTA_OIF) {
+                    int ifindex = *(int*)RTA_DATA(rta);
+                    char ifname[IFNAMSIZ];
+                    if (if_indextoname(ifindex, ifname) && is_vpn_iface(ifname)) {
+                        vpn_found.push_back(ifname);
+                        LOGI("  RTM_GETROUTE: VPN route via '%s'", ifname);
+                    }
+                }
+                rta = RTA_NEXT(rta, rta_len);
+            }
+        }
+    }
+    close(fd);
+
+    std::string result;
+    if (vpn_found.empty()) {
+        result = "PASS: " + std::to_string(total) + " routes, no VPN";
+    } else {
+        std::string vl;
+        for (auto& n : vpn_found) { if (!vl.empty()) vl += ", "; vl += n; }
+        result = "FAIL: VPN routes via [" + vl + "]";
+    }
+    LOGI("RESULT: %s", result.c_str());
+    return to_jstring(env, result);
+}
+
+// 8. /proc/net/ipv6_route
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetIpv6Route(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/ipv6_route"));
+}
+
+// 9. /proc/net/tcp
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetTcp(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/tcp"));
+}
+
+// 10. /proc/net/tcp6
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetTcp6(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/tcp6"));
+}
+
+// 11. /proc/net/udp
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetUdp(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/udp"));
+}
+
+// 12. /proc/net/udp6
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetUdp6(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/udp6"));
+}
+
+// 13. /proc/net/dev
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetDev(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/dev"));
+}
+
+// 14. /proc/net/fib_trie
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkProcNetFibTrie(JNIEnv* env, jobject) {
+    return to_jstring(env, check_proc_file("/proc/net/fib_trie"));
+}
+
+// 15. /sys/class/net — check for VPN interface directories
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_okhsunrog_vpnhide_test_NativeChecks_checkSysClassNet(JNIEnv* env, jobject) {
+    LOGI("=== CHECK: /sys/class/net/ directory ===");
+    DIR* dir = opendir("/sys/class/net");
+    if (!dir) {
+        int err = errno;
+        if (err == EACCES || err == EPERM) {
+            std::string r = "PASS: access denied by SELinux (" + std::string(strerror(err)) + ")";
+            LOGI("RESULT: %s", r.c_str());
+            return to_jstring(env, r);
+        }
+        std::string r = "FAIL: cannot open /sys/class/net: " + std::string(strerror(err));
+        LOGI("RESULT: %s", r.c_str());
+        return to_jstring(env, r);
+    }
+
+    std::vector<std::string> all_ifaces;
+    std::vector<std::string> vpn_found;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        all_ifaces.push_back(entry->d_name);
+        LOGI("  /sys/class/net: '%s'", entry->d_name);
+        if (is_vpn_iface(entry->d_name)) {
+            vpn_found.push_back(entry->d_name);
+        }
+    }
+    closedir(dir);
+
+    std::string all_list;
+    for (auto& n : all_ifaces) { if (!all_list.empty()) all_list += ", "; all_list += n; }
+
+    std::string result;
+    if (vpn_found.empty()) {
+        result = "PASS: [" + all_list + "], no VPN";
+    } else {
+        std::string vl;
+        for (auto& n : vpn_found) { if (!vl.empty()) vl += ", "; vl += n; }
+        result = "FAIL: VPN interfaces [" + vl + "] in [" + all_list + "]";
     }
     LOGI("RESULT: %s", result.c_str());
     return to_jstring(env, result);

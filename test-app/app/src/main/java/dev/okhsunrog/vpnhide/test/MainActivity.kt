@@ -193,15 +193,24 @@ private fun runAllChecks(cm: ConnectivityManager): List<CheckResult> {
 
     val results = mutableListOf<CheckResult>()
 
-    // Native checks
-    results.add(nativeCheck("1. ioctl SIOCGIFFLAGS tun0") { NativeChecks.checkIoctlSiocgifflags() })
-    results.add(nativeCheck("2. ioctl SIOCGIFCONF enum") { NativeChecks.checkIoctlSiocgifconf() })
-    results.add(nativeCheck("3. getifaddrs() enum") { NativeChecks.checkGetifaddrs() })
-    results.add(nativeCheck("4. /proc/net/route (native)") { NativeChecks.checkProcNetRoute() })
-    results.add(nativeCheck("5. /proc/net/if_inet6 (native)") { NativeChecks.checkProcNetIfInet6() })
-    results.add(nativeCheck("6. netlink RTM_GETLINK") { NativeChecks.checkNetlinkGetlink() })
+    // Native checks — kernel-level detection vectors
+    results.add(nativeCheck("ioctl SIOCGIFFLAGS tun0") { NativeChecks.checkIoctlSiocgifflags() })
+    results.add(nativeCheck("ioctl SIOCGIFCONF enum") { NativeChecks.checkIoctlSiocgifconf() })
+    results.add(nativeCheck("getifaddrs() enum") { NativeChecks.checkGetifaddrs() })
+    results.add(nativeCheck("netlink RTM_GETLINK") { NativeChecks.checkNetlinkGetlink() })
+    results.add(nativeCheck("netlink RTM_GETROUTE") { NativeChecks.checkNetlinkGetroute() })
+    results.add(nativeCheck("/proc/net/route") { NativeChecks.checkProcNetRoute() })
+    results.add(nativeCheck("/proc/net/ipv6_route") { NativeChecks.checkProcNetIpv6Route() })
+    results.add(nativeCheck("/proc/net/if_inet6") { NativeChecks.checkProcNetIfInet6() })
+    results.add(nativeCheck("/proc/net/tcp") { NativeChecks.checkProcNetTcp() })
+    results.add(nativeCheck("/proc/net/tcp6") { NativeChecks.checkProcNetTcp6() })
+    results.add(nativeCheck("/proc/net/udp") { NativeChecks.checkProcNetUdp() })
+    results.add(nativeCheck("/proc/net/udp6") { NativeChecks.checkProcNetUdp6() })
+    results.add(nativeCheck("/proc/net/dev") { NativeChecks.checkProcNetDev() })
+    results.add(nativeCheck("/proc/net/fib_trie") { NativeChecks.checkProcNetFibTrie() })
+    results.add(nativeCheck("/sys/class/net") { NativeChecks.checkSysClassNet() })
 
-    // Java checks
+    // Java checks — Android API detection vectors
     results.add(checkHasTransportVpn(cm))
     results.add(checkHasCapabilityNotVpn(cm))
     results.add(checkTransportInfo(cm))
