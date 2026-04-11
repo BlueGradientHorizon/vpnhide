@@ -50,13 +50,13 @@ jobs:
       image: ghcr.io/ylarod/ddk-min:${{ matrix.kmi }}-20260313
     env:
       KDIR: /opt/ddk/kdir/${{ matrix.kmi }}
-      CLANG: /opt/ddk/clang/clang-r487747c/bin
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Build kernel module
         run: |
+          CLANG=$(echo /opt/ddk/clang/clang-r*/bin)
           make -C $KDIR M=$GITHUB_WORKSPACE/kmod \
               ARCH=arm64 LLVM=1 LLVM_IAS=1 \
               CC=$CLANG/clang LD=$CLANG/ld.lld \
@@ -66,7 +66,7 @@ jobs:
               STRIP=$CLANG/llvm-strip \
               CROSS_COMPILE=aarch64-linux-gnu- \
               modules
-          llvm-strip -d kmod/vpnhide_kmod.ko
+          $CLANG/llvm-strip -d kmod/vpnhide_kmod.ko
 
       - name: Package KSU module zip
         run: |
