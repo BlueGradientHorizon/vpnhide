@@ -27,6 +27,7 @@ kmod/vpnhide-kmod.zip
 kmod/.*.cmd
 kmod/*.usyms
 kmod/vpnhide_kmod.ko
+kmod/module/vpnhide_kmod.ko
 kmod/.env
 
 # Test app
