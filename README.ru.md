@@ -77,7 +77,7 @@ vpnhide решает обе проблемы двухуровневой архи
 | **[kmod/](kmod/)** | Модуль ядра (C) | Хуки `kretprobe` в пространстве ядра. Нулевой след в процессе приложения. ([подробнее](kmod/README.md)) |
 | **[lsposed/](lsposed/)** | LSPosed-модуль + приложение выбора целей (Kotlin) | Хуки `writeToParcel` в `system_server` для per-UID фильтрации Binder. APK также служит UI для управления целями. ([подробнее](lsposed/README.md)) |
 | **[zygisk/](zygisk/)** | Zygisk-модуль (Rust) | Inline-хуки `libc.so` в процессе приложения. Альтернатива kmod. ([подробнее](zygisk/README.md)) |
-| **[test-app/](test-app/)** | Диагностическое приложение (Kotlin + Rust) | 24 проверки, покрывающие все векторы обнаружения. |
+| **[test-app/](test-app/)** | Диагностическое приложение (Kotlin + Rust) | 26 проверок, покрывающих все векторы обнаружения. |
 
 ## Покрытие обнаружения
 
@@ -85,31 +85,34 @@ vpnhide решает обе проблемы двухуровневой архи
 |---|---|---|---|---|---|
 | 1 | `ioctl(SIOCGIFFLAGS)` на tun0 | | x | x | |
 | 2 | `ioctl(SIOCGIFNAME)` разрешение индекса в имя | | x | x | |
-| 3 | `ioctl(SIOCGIFCONF)` перечисление интерфейсов | | x | x | |
-| 4 | `getifaddrs()` (использует netlink внутри) | | x | x | |
-| 5 | netlink `RTM_GETLINK` дамп | блок. | x | x | |
-| 6 | netlink `RTM_GETADDR` дамп (IPv4 + IPv6) | блок. | x | | |
-| 7 | netlink `RTM_GETROUTE` дамп | блок. | | | |
-| 8 | `/proc/net/route` | блок. | x | x | |
-| 9 | `/proc/net/ipv6_route` | блок. | | x | |
-| 10 | `/proc/net/if_inet6` | блок. | | x | |
-| 11 | `/proc/net/tcp`, `tcp6` | блок. | | | |
-| 12 | `/proc/net/udp`, `udp6` | блок. | | | |
-| 13 | `/proc/net/dev` | блок. | | | |
-| 14 | `/proc/net/fib_trie` | блок. | | | |
-| 15 | `/sys/class/net/tun0/` | блок. | | | |
-| 16 | `NetworkCapabilities` (hasTransport, NOT_VPN, transportInfo) | | | | x |
-| 17 | `NetworkInfo` (getType, getTypeName) | | | | x |
-| 18 | `ConnectivityManager.getActiveNetwork()` | | | | x |
-| 19 | `ConnectivityManager.getAllNetworks()` + VPN-сканирование | | | | x |
-| 20 | `LinkProperties` (interfaceName, routes, DNS) | | | | x |
-| 21 | `NetworkInterface.getNetworkInterfaces()` | | x | x | |
-| 22 | `System.getProperty` (настройки прокси) | | | x | |
-| 23 | `/proc/net/route` через Java `FileInputStream` | блок. | x | x | |
+| 3 | `ioctl(SIOCGIFMTU)` фингерпринтинг MTU | | x | x | |
+| 4 | `ioctl(SIOCGIFCONF)` перечисление интерфейсов | | x | x | |
+| 5 | Все остальные `SIOCGIF*` (INDEX, HWADDR, ADDR и т.д.) | | x | x | |
+| 6 | `getifaddrs()` (использует netlink внутри) | | x | x | |
+| 7 | netlink `RTM_GETLINK` дамп | блок. | x | x | |
+| 8 | netlink `RTM_GETADDR` дамп (IPv4 + IPv6) | блок. | x | | |
+| 9 | netlink `RTM_GETROUTE` дамп | блок. | | | |
+| 10 | `/proc/net/route` | блок. | x | x | |
+| 11 | `/proc/net/ipv6_route` | блок. | | x | |
+| 12 | `/proc/net/if_inet6` | блок. | | x | |
+| 13 | `/proc/net/tcp`, `tcp6` | блок. | | | |
+| 14 | `/proc/net/udp`, `udp6` | блок. | | | |
+| 15 | `/proc/net/dev` | блок. | | | |
+| 16 | `/proc/net/fib_trie` | блок. | | | |
+| 17 | `/sys/class/net/tun0/` | блок. | | | |
+| 18 | `NetworkCapabilities` (hasTransport, NOT_VPN, transportInfo) | | | | x |
+| 19 | `NetworkInfo` (getType, getTypeName) | | | | x |
+| 20 | `ConnectivityManager.getActiveNetwork()` | | | | x |
+| 21 | `ConnectivityManager.getAllNetworks()` + VPN-сканирование | | | | x |
+| 22 | `LinkProperties` (interfaceName) | | | | x |
+| 23 | `LinkProperties` (маршруты через VPN-интерфейсы) | | | | x |
+| 24 | `NetworkInterface.getNetworkInterfaces()` | | x | x | |
+| 25 | `System.getProperty` (настройки прокси) | | | x | |
+| 26 | `/proc/net/route` через Java `FileInputStream` | блок. | x | x | |
 
 **блок.** = SELinux запрещает доступ для обычных приложений (Android 10+). Хуки не нужны.
 
-Строки 1–4, 19 и 21 — единственные векторы, доступные обычным приложениям. Всё остальное либо заблокировано SELinux, либо проходит через Java API (покрывается lsposed).
+Строки 1–6, 21 и 24 — единственные векторы, доступные обычным приложениям. Всё остальное либо заблокировано SELinux, либо проходит через Java API (покрывается lsposed).
 
 ## Сборка из исходников
 

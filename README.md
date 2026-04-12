@@ -79,7 +79,7 @@ Install `vpnhide-test.apk` from the release, add it to the target list via WebUI
 | **[kmod/](kmod/)** | Kernel module (C) | `kretprobe` hooks in kernel space. Zero footprint in the target app's process. ([details](kmod/README.md)) |
 | **[lsposed/](lsposed/)** | LSPosed module + target picker app (Kotlin) | Hooks `writeToParcel` in `system_server` for per-UID Binder filtering. The APK also serves as the target management UI. ([details](lsposed/README.md)) |
 | **[zygisk/](zygisk/)** | Zygisk module (Rust) | Inline-hooks `libc.so` in the target app's process. Alternative to kmod. ([details](zygisk/README.md)) |
-| **[test-app/](test-app/)** | Diagnostic app (Kotlin + Rust) | 24 checks covering all detection vectors. |
+| **[test-app/](test-app/)** | Diagnostic app (Kotlin + Rust) | 26 checks covering all detection vectors. |
 
 ## Detection coverage
 
@@ -87,31 +87,34 @@ Install `vpnhide-test.apk` from the release, add it to the target list via WebUI
 |---|---|---|---|---|---|
 | 1 | `ioctl(SIOCGIFFLAGS)` on tun0 | | x | x | |
 | 2 | `ioctl(SIOCGIFNAME)` resolve index to name | | x | x | |
-| 3 | `ioctl(SIOCGIFCONF)` interface enumeration | | x | x | |
-| 4 | `getifaddrs()` (uses netlink internally) | | x | x | |
-| 5 | netlink `RTM_GETLINK` dump | blocked | x | x | |
-| 6 | netlink `RTM_GETADDR` dump (IPv4 + IPv6) | blocked | x | | |
-| 7 | netlink `RTM_GETROUTE` dump | blocked | | | |
-| 8 | `/proc/net/route` | blocked | x | x | |
-| 9 | `/proc/net/ipv6_route` | blocked | | x | |
-| 10 | `/proc/net/if_inet6` | blocked | | x | |
-| 11 | `/proc/net/tcp`, `tcp6` | blocked | | | |
-| 12 | `/proc/net/udp`, `udp6` | blocked | | | |
-| 13 | `/proc/net/dev` | blocked | | | |
-| 14 | `/proc/net/fib_trie` | blocked | | | |
-| 15 | `/sys/class/net/tun0/` | blocked | | | |
-| 16 | `NetworkCapabilities` (hasTransport, NOT_VPN, transportInfo) | | | | x |
-| 17 | `NetworkInfo` (getType, getTypeName) | | | | x |
-| 18 | `ConnectivityManager.getActiveNetwork()` | | | | x |
-| 19 | `ConnectivityManager.getAllNetworks()` + VPN scan | | | | x |
-| 20 | `LinkProperties` (interfaceName, routes, DNS) | | | | x |
-| 21 | `NetworkInterface.getNetworkInterfaces()` | | x | x | |
-| 22 | `System.getProperty` (proxy settings) | | | x | |
-| 23 | `/proc/net/route` via Java `FileInputStream` | blocked | x | x | |
+| 3 | `ioctl(SIOCGIFMTU)` MTU fingerprinting | | x | x | |
+| 4 | `ioctl(SIOCGIFCONF)` interface enumeration | | x | x | |
+| 5 | All other `SIOCGIF*` (INDEX, HWADDR, ADDR, etc.) | | x | x | |
+| 6 | `getifaddrs()` (uses netlink internally) | | x | x | |
+| 7 | netlink `RTM_GETLINK` dump | blocked | x | x | |
+| 8 | netlink `RTM_GETADDR` dump (IPv4 + IPv6) | blocked | x | | |
+| 9 | netlink `RTM_GETROUTE` dump | blocked | | | |
+| 10 | `/proc/net/route` | blocked | x | x | |
+| 11 | `/proc/net/ipv6_route` | blocked | | x | |
+| 12 | `/proc/net/if_inet6` | blocked | | x | |
+| 13 | `/proc/net/tcp`, `tcp6` | blocked | | | |
+| 14 | `/proc/net/udp`, `udp6` | blocked | | | |
+| 15 | `/proc/net/dev` | blocked | | | |
+| 16 | `/proc/net/fib_trie` | blocked | | | |
+| 17 | `/sys/class/net/tun0/` | blocked | | | |
+| 18 | `NetworkCapabilities` (hasTransport, NOT_VPN, transportInfo) | | | | x |
+| 19 | `NetworkInfo` (getType, getTypeName) | | | | x |
+| 20 | `ConnectivityManager.getActiveNetwork()` | | | | x |
+| 21 | `ConnectivityManager.getAllNetworks()` + VPN scan | | | | x |
+| 22 | `LinkProperties` (interfaceName) | | | | x |
+| 23 | `LinkProperties` (routes via VPN interfaces) | | | | x |
+| 24 | `NetworkInterface.getNetworkInterfaces()` | | x | x | |
+| 25 | `System.getProperty` (proxy settings) | | | x | |
+| 26 | `/proc/net/route` via Java `FileInputStream` | blocked | x | x | |
 
 **blocked** = SELinux denies access for untrusted apps (Android 10+). No hook needed.
 
-Rows 1-4, 19, and 21 are the only vectors reachable by regular apps. Everything else is either blocked by SELinux or goes through Java APIs (covered by lsposed).
+Rows 1-6, 21, and 24 are the only vectors reachable by regular apps. Everything else is either blocked by SELinux or goes through Java APIs (covered by lsposed).
 
 ## Building from source
 
