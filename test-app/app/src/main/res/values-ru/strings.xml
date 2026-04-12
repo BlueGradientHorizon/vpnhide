@@ -13,11 +13,10 @@
     <string name="badge_fail">ПРОВАЛ</string>
     <string name="badge_info">ИНФО</string>
 
-    <!-- Target list banner -->
-    <string name="banner_target_warning">Убедитесь, что это приложение добавлено в список целевых приложений в VPN Hide перед запуском проверок.</string>
+    <!-- Banner -->
+    <string name="banner_warning">Включите VPN-соединение перед запуском проверок и убедитесь, что это приложение добавлено в список целевых в VPN Hide.</string>
 
     <!-- Section headers -->
-    <string name="section_native_kmod_zygisk">Нативные хуки (kmod / zygisk)</string>
-    <string name="section_selinux">Векторы, блокируемые SELinux</string>
-    <string name="section_java_lsposed">Java API хуки (LSPosed)</string>
+    <string name="section_native">Нативный уровень (kmod / zygisk)</string>
+    <string name="section_java">Java API уровень (LSPosed)</string>
 </resources>

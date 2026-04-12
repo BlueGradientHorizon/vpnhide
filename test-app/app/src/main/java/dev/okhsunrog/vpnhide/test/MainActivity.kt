@@ -31,9 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContent {
-            VpnHideTestApp()
-        }
+        setContent { VpnHideTestApp() }
     }
 }
 
@@ -42,9 +40,16 @@ private val VPN_PREFIXES = listOf("tun", "wg", "ppp", "tap", "ipsec", "xfrm")
 
 data class CheckResult(
     val name: String,
-    val passed: Boolean?, // null = informational
+    val passed: Boolean?,
     val detail: String,
 )
+
+data class CheckResults(
+    val native: List<CheckResult>,
+    val java: List<CheckResult>,
+) {
+    val all get() = native + java
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,17 +66,21 @@ fun VpnHideTestApp() {
     MaterialTheme(colorScheme = colorScheme) {
         val context = LocalContext.current
         val cm = context.getSystemService(ConnectivityManager::class.java)
-        var results by remember { mutableStateOf<List<CheckResult>>(emptyList()) }
+        var results by remember { mutableStateOf<CheckResults?>(null) }
         val summaryRunning = stringResource(R.string.summary_running)
         var summary by remember { mutableStateOf(summaryRunning) }
         val summaryFmt = stringResource(R.string.summary_format)
 
+        fun updateSummary(r: CheckResults) {
+            val scored = r.all.filter { it.passed != null }
+            val passed = scored.count { it.passed == true }
+            summary = String.format(summaryFmt, passed, scored.size)
+        }
+
         LaunchedEffect(Unit) {
             val r = runAllChecks(cm, context)
             results = r
-            val scored = r.filter { it.passed != null }
-            val passed = scored.count { it.passed == true }
-            summary = String.format(summaryFmt, passed, scored.size)
+            updateSummary(r)
         }
 
         Scaffold(
@@ -91,71 +100,101 @@ fun VpnHideTestApp() {
                     Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 16.dp)
+                        .verticalScroll(rememberScrollState()),
             ) {
                 Spacer(Modifier.height(8.dp))
 
-                // Banner: target list warning
-                Card(
-                    shape = RoundedCornerShape(8.dp),
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = stringResource(R.string.banner_target_warning),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
+                InfoBanner(
+                    text = stringResource(R.string.banner_warning),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
 
                 Text(
                     text = summary,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp),
                 )
+
+                Spacer(Modifier.height(8.dp))
 
                 Button(
                     onClick = {
                         summary = summaryRunning
                         val r = runAllChecks(cm, context)
                         results = r
-                        val scored = r.filter { it.passed != null }
-                        val passed = scored.count { it.passed == true }
-                        summary = String.format(summaryFmt, passed, scored.size)
+                        updateSummary(r)
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.btn_run_all))
                 }
 
-                Spacer(Modifier.height(8.dp))
-
-                Column(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    for (r in results) {
-                        CheckCard(r)
-                    }
+                results?.let { r ->
                     Spacer(Modifier.height(16.dp))
+
+                    // Native section
+                    SectionHeader(stringResource(R.string.section_native))
+                    Spacer(Modifier.height(6.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (check in r.native) {
+                            CheckCard(check)
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Java API section
+                    SectionHeader(stringResource(R.string.section_java))
+                    Spacer(Modifier.height(6.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (check in r.java) {
+                            CheckCard(check)
+                        }
+                    }
                 }
+
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
 }
 
 @Composable
-fun CheckCard(r: CheckResult) {
+private fun InfoBanner(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = contentColor,
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+@Composable
+private fun CheckCard(r: CheckResult) {
     val darkTheme = isSystemInDarkTheme()
     val actualColor =
         if (darkTheme) {
@@ -223,54 +262,60 @@ fun CheckCard(r: CheckResult) {
     }
 }
 
+// ==========================================================================
+//  Check runner
+// ==========================================================================
+
 private fun runAllChecks(
     cm: ConnectivityManager,
     context: android.content.Context,
-): List<CheckResult> {
+): CheckResults {
     Log.i(TAG, "========================================")
     Log.i(TAG, "=== VPNHide Test — starting all checks ===")
     Log.i(TAG, "========================================")
 
-    val results = mutableListOf<CheckResult>()
     val res = context.resources
 
-    // Native checks — kmod/zygisk detection vectors
-    results.add(nativeCheck(res.getString(R.string.check_ioctl_flags)) { NativeChecks.checkIoctlSiocgifflags() })
-    results.add(nativeCheck(res.getString(R.string.check_ioctl_conf)) { NativeChecks.checkIoctlSiocgifconf() })
-    results.add(nativeCheck(res.getString(R.string.check_getifaddrs)) { NativeChecks.checkGetifaddrs() })
-    results.add(nativeCheck(res.getString(R.string.check_netlink_getlink)) { NativeChecks.checkNetlinkGetlink() })
-    results.add(nativeCheck(res.getString(R.string.check_netlink_getroute)) { NativeChecks.checkNetlinkGetroute() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_route)) { NativeChecks.checkProcNetRoute() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_ipv6_route)) { NativeChecks.checkProcNetIpv6Route() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_if_inet6)) { NativeChecks.checkProcNetIfInet6() })
+    val native =
+        listOf(
+            nativeCheck(res.getString(R.string.check_ioctl_flags)) { NativeChecks.checkIoctlSiocgifflags() },
+            nativeCheck(res.getString(R.string.check_ioctl_conf)) { NativeChecks.checkIoctlSiocgifconf() },
+            nativeCheck(res.getString(R.string.check_getifaddrs)) { NativeChecks.checkGetifaddrs() },
+            nativeCheck(res.getString(R.string.check_netlink_getlink)) { NativeChecks.checkNetlinkGetlink() },
+            nativeCheck(res.getString(R.string.check_netlink_getroute)) { NativeChecks.checkNetlinkGetroute() },
+            nativeCheck(res.getString(R.string.check_proc_route)) { NativeChecks.checkProcNetRoute() },
+            nativeCheck(res.getString(R.string.check_proc_ipv6_route)) { NativeChecks.checkProcNetIpv6Route() },
+            nativeCheck(res.getString(R.string.check_proc_if_inet6)) { NativeChecks.checkProcNetIfInet6() },
+            nativeCheck(res.getString(R.string.check_proc_tcp)) { NativeChecks.checkProcNetTcp() },
+            nativeCheck(res.getString(R.string.check_proc_tcp6)) { NativeChecks.checkProcNetTcp6() },
+            nativeCheck(res.getString(R.string.check_proc_udp)) { NativeChecks.checkProcNetUdp() },
+            nativeCheck(res.getString(R.string.check_proc_udp6)) { NativeChecks.checkProcNetUdp6() },
+            nativeCheck(res.getString(R.string.check_proc_dev)) { NativeChecks.checkProcNetDev() },
+            nativeCheck(res.getString(R.string.check_proc_fib_trie)) { NativeChecks.checkProcNetFibTrie() },
+            nativeCheck(res.getString(R.string.check_sys_class_net)) { NativeChecks.checkSysClassNet() },
+            checkNetworkInterfaceEnum(res.getString(R.string.check_net_iface_enum)),
+            checkProcNetRouteJava(res.getString(R.string.check_proc_route_java)),
+        )
 
-    // SELinux-blocked vectors
-    results.add(nativeCheck(res.getString(R.string.check_proc_tcp)) { NativeChecks.checkProcNetTcp() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_tcp6)) { NativeChecks.checkProcNetTcp6() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_udp)) { NativeChecks.checkProcNetUdp() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_udp6)) { NativeChecks.checkProcNetUdp6() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_dev)) { NativeChecks.checkProcNetDev() })
-    results.add(nativeCheck(res.getString(R.string.check_proc_fib_trie)) { NativeChecks.checkProcNetFibTrie() })
-    results.add(nativeCheck(res.getString(R.string.check_sys_class_net)) { NativeChecks.checkSysClassNet() })
+    val java =
+        listOf(
+            checkHasTransportVpn(cm, res.getString(R.string.check_has_transport_vpn)),
+            checkHasCapabilityNotVpn(cm, res.getString(R.string.check_has_capability_not_vpn)),
+            checkTransportInfo(cm, res.getString(R.string.check_transport_info)),
+            checkAllNetworksVpn(cm, res.getString(R.string.check_all_networks_vpn)),
+            checkActiveNetworkVpn(cm, res.getString(R.string.check_active_network_vpn)),
+            checkLinkPropertiesIfname(cm, res.getString(R.string.check_link_properties)),
+            checkProxyHost(res.getString(R.string.check_proxy_host)),
+        )
 
-    // Java checks — LSPosed/Binder detection vectors
-    results.add(checkHasTransportVpn(cm, res.getString(R.string.check_has_transport_vpn)))
-    results.add(checkHasCapabilityNotVpn(cm, res.getString(R.string.check_has_capability_not_vpn)))
-    results.add(checkTransportInfo(cm, res.getString(R.string.check_transport_info)))
-    results.add(checkNetworkInterfaceEnum(res.getString(R.string.check_net_iface_enum)))
-    results.add(checkAllNetworksVpn(cm, res.getString(R.string.check_all_networks_vpn)))
-    results.add(checkActiveNetworkVpn(cm, res.getString(R.string.check_active_network_vpn)))
-    results.add(checkLinkPropertiesIfname(cm, res.getString(R.string.check_link_properties)))
-    results.add(checkProxyHost(res.getString(R.string.check_proxy_host)))
-    results.add(checkProcNetRouteJava(res.getString(R.string.check_proc_route_java)))
-
-    val scored = results.filter { it.passed != null }
+    val all = native + java
+    val scored = all.filter { it.passed != null }
     val passed = scored.count { it.passed == true }
     Log.i(TAG, "========================================")
     Log.i(TAG, "=== SUMMARY: $passed/${scored.size} passed ===")
     Log.i(TAG, "========================================")
 
-    return results
+    return CheckResults(native = native, java = java)
 }
 
 private fun nativeCheck(
@@ -287,6 +332,10 @@ private fun nativeCheck(
         Log.e(TAG, "[$name] $detail", e)
         CheckResult(name, false, detail)
     }
+
+// ==========================================================================
+//  Java API checks (LSPosed / Binder)
+// ==========================================================================
 
 private fun checkHasTransportVpn(
     cm: ConnectivityManager,
