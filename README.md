@@ -6,7 +6,7 @@ Hide an active Android VPN connection from selected apps.
 
 ## Why vpnhide over alternatives?
 
-Existing modules like [NoVPNDetect](https://bitbucket.org/yuri-project/novpndetect) and [NoVPNDetect Enhanced](https://github.com/BlueCat300/NoVPNDetectEnhanced) hook **inside the target app's process** via Xposed. This means any app with anti-tamper protection (Trusteer, Appdome, DexGuard) can detect the injection and refuse to work. The NoVPNDetect Enhanced author explicitly states: *"The module will not work if the target app has LSPosed protection or memory injection checks. For example, MirPay, T-Bank."*
+Existing modules like [NoVPNDetect](https://bitbucket.org/yuri-project/novpndetect) and [NoVPNDetect Enhanced](https://github.com/BlueCat300/NoVPNDetectEnhanced) hook **inside the target app's process** via Xposed. This means any app with anti-tamper protection can detect the injection and refuse to work. The NoVPNDetect Enhanced author explicitly states: *"The module will not work if the target app has LSPosed protection or memory injection checks. For example, MirPay, T-Bank."*
 
 vpnhide takes a fundamentally different approach:
 
@@ -14,7 +14,7 @@ vpnhide takes a fundamentally different approach:
 - **kmod** hooks the kernel itself — ioctl, netlink, and /proc/net responses are filtered before the syscall returns. Zero in-process footprint. No library injection. Nothing to detect.
 - The target app's process is completely untouched — no Xposed, no inline hooks, no modified memory regions.
 
-This makes vpnhide work with banking and government apps that actively detect and block Xposed-based modules.
+This makes vpnhide work with apps like MirPay, T-Bank, Alfa-Bank and other banking/government apps that actively detect and block Xposed-based modules.
 
 Additionally, vpnhide covers native detection vectors (ioctl, netlink, /proc/net) that the alternatives don't hook at all — these are the vectors used by apps built on cross-platform frameworks and native SDKs.
 
