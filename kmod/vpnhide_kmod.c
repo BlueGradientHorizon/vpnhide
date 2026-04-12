@@ -76,20 +76,18 @@ static DEFINE_SPINLOCK(uids_lock);
 static bool is_target_uid(void)
 {
 	uid_t uid = from_kuid(&init_user_ns, current_uid());
+	bool found = false;
 	int i;
-
-	if (READ_ONCE(nr_target_uids) == 0)
-		return false;
 
 	spin_lock(&uids_lock);
 	for (i = 0; i < nr_target_uids; i++) {
 		if (target_uids[i] == uid) {
-			spin_unlock(&uids_lock);
-			return true;
+			found = true;
+			break;
 		}
 	}
 	spin_unlock(&uids_lock);
-	return false;
+	return found;
 }
 
 /* ------------------------------------------------------------------ */
@@ -284,13 +282,13 @@ static int dev_ifconf_ret(struct kretprobe_instance *ri,
 
 	for (i = 0; i < n; i++) {
 		if (copy_from_user(&tmp, &usr_ifr[i], sizeof(tmp)))
-			break;
+			return 0; /* copy failed — leave buffer untouched */
 		tmp.ifr_name[IFNAMSIZ - 1] = '\0';
 		if (is_vpn_ifname(tmp.ifr_name))
 			continue;
 		if (dst != i) {
 			if (copy_to_user(&usr_ifr[dst], &tmp, sizeof(tmp)))
-				break;
+				return 0; /* copy failed — stop compacting */
 		}
 		dst++;
 	}
@@ -343,8 +341,12 @@ static int rtnl_fill_entry(struct kretprobe_instance *ri,
 	 * arm64: x0=skb, x1=dev
 	 */
 	dev = (struct net_device *)regs->regs[1];
+	/* Callers hold RTNL which protects dev->name, but take RCU as
+	 * belt-and-suspenders — same rationale as inet6_fill_entry. */
+	rcu_read_lock();
 	if (dev && is_vpn_ifname(dev->name))
 		data->should_filter = true;
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -403,12 +405,19 @@ static int inet6_fill_entry(struct kretprobe_instance *ri,
 		return 0;
 
 	ifa = (struct inet6_ifaddr *)regs->regs[1];
+	/*
+	 * The callers of inet6_fill_ifaddr() hold either rcu_read_lock()
+	 * (netlink dump path) or RTNL. We take rcu_read_lock() explicitly
+	 * so the kretprobe handler doesn't rely on that implicit guarantee.
+	 */
+	rcu_read_lock();
 	if (ifa && ifa->idev && ifa->idev->dev &&
 	    is_vpn_ifname(ifa->idev->dev->name)) {
 		data->skb = (struct sk_buff *)regs->regs[0];
 		data->saved_len = data->skb ? data->skb->len : 0;
 		data->should_filter = true;
 	}
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -462,12 +471,15 @@ static int inet_fill_entry(struct kretprobe_instance *ri,
 		return 0;
 
 	ifa = (struct in_ifaddr *)regs->regs[1];
+	/* Same RCU rationale as inet6_fill_entry above. */
+	rcu_read_lock();
 	if (ifa && ifa->ifa_dev && ifa->ifa_dev->dev &&
 	    is_vpn_ifname(ifa->ifa_dev->dev->name)) {
 		data->skb = (struct sk_buff *)regs->regs[0];
 		data->saved_len = data->skb ? data->skb->len : 0;
 		data->should_filter = true;
 	}
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -617,7 +629,7 @@ static struct kretprobe_reg probes[] = {
 
 static int __init vpnhide_init(void)
 {
-	int i, ret;
+	int i, ret, ok = 0;
 
 	for (i = 0; i < ARRAY_SIZE(probes); i++) {
 		ret = register_kretprobe(probes[i].krp);
@@ -626,10 +638,20 @@ static int __init vpnhide_init(void)
 				probes[i].name, ret);
 		} else {
 			probes[i].registered = true;
+			ok++;
 			pr_info(MODNAME ": kretprobe(%s) registered\n",
 				probes[i].name);
 		}
 	}
+
+	if (ok == 0) {
+		pr_err(MODNAME ": no kretprobes registered, aborting\n");
+		return -ENOENT;
+	}
+	if (ok < ARRAY_SIZE(probes))
+		pr_warn(MODNAME ": only %d/%zu kretprobes registered — "
+			"some detection paths are not covered\n",
+			ok, ARRAY_SIZE(probes));
 
 	/* 0600: root-only read/write. UIDs are written here by service.sh
 	 * and WebUI (both root). Apps must not see the target list. */

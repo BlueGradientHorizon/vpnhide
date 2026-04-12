@@ -57,9 +57,18 @@ class MainActivity : ComponentActivity() {
 private fun suExec(cmd: String): Pair<Int, String> {
     return try {
         val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-        val stdout = proc.inputStream.bufferedReader().readText()
-        val exitCode = proc.waitFor()
-        exitCode to stdout
+        try {
+            // Drain stderr in the background to prevent the process from
+            // blocking if it produces error output.
+            val stderrDrain = Thread { proc.errorStream.readBytes() }
+            stderrDrain.start()
+            val stdout = proc.inputStream.bufferedReader().readText()
+            val exitCode = proc.waitFor()
+            stderrDrain.join()
+            exitCode to stdout
+        } finally {
+            proc.destroy()
+        }
     } catch (e: Exception) {
         Log.e(TAG, "su exec failed: ${e.message}")
         -1 to ""

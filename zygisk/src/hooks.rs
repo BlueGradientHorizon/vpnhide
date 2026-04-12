@@ -529,10 +529,23 @@ unsafe fn open_filtered_proc_net(
     }
 
     if filtered_len > 0 {
-        unsafe {
-            libc::write(memfd, buf.as_ptr() as *const c_void, filtered_len);
-            libc::lseek(memfd, 0, libc::SEEK_SET);
+        let mut written = 0usize;
+        while written < filtered_len {
+            let n = unsafe {
+                libc::write(
+                    memfd,
+                    buf[written..].as_ptr() as *const c_void,
+                    filtered_len - written,
+                )
+            };
+            if n < 0 {
+                unsafe { libc::close(memfd) };
+                set_errno(libc::EIO);
+                return -1;
+            }
+            written += n as usize;
         }
+        unsafe { libc::lseek(memfd, 0, libc::SEEK_SET) };
     }
 
     memfd

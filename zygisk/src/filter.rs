@@ -349,12 +349,14 @@ const fn nlmsg_align(len: usize) -> usize {
     (len + NLMSG_ALIGNTO - 1) & !(NLMSG_ALIGNTO - 1)
 }
 
-fn read_u32_ne(data: &[u8], off: usize) -> u32 {
-    u32::from_ne_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+fn read_u32_ne(data: &[u8], off: usize) -> Option<u32> {
+    let bytes: &[u8; 4] = data.get(off..off + 4)?.try_into().ok()?;
+    Some(u32::from_ne_bytes(*bytes))
 }
 
-fn read_u16_ne(data: &[u8], off: usize) -> u16 {
-    u16::from_ne_bytes([data[off], data[off + 1]])
+fn read_u16_ne(data: &[u8], off: usize) -> Option<u16> {
+    let bytes: &[u8; 2] = data.get(off..off + 2)?.try_into().ok()?;
+    Some(u16::from_ne_bytes(*bytes))
 }
 
 /// Filter netlink dump responses in-place: remove `RTM_NEWLINK` and
@@ -375,19 +377,21 @@ pub fn filter_netlink_dump(data: &mut [u8], vpn_indices: &[u32]) -> usize {
     let mut write_pos = 0usize;
 
     while read_pos + NLMSG_HDRLEN <= len {
-        let nlmsg_len = read_u32_ne(data, read_pos) as usize;
+        let Some(nlmsg_len_raw) = read_u32_ne(data, read_pos) else { break };
+        let nlmsg_len = nlmsg_len_raw as usize;
         if nlmsg_len < NLMSG_HDRLEN || read_pos + nlmsg_len > len {
             break;
         }
         let aligned_len = nlmsg_align(nlmsg_len).min(len - read_pos);
-        let nlmsg_type = read_u16_ne(data, read_pos + 4);
+        let Some(nlmsg_type) = read_u16_ne(data, read_pos + 4) else { break };
 
         let hide = if (nlmsg_type == RTM_NEWLINK || nlmsg_type == RTM_NEWADDR)
             && nlmsg_len >= NLMSG_HDRLEN + 8
         {
             // Interface index is at payload offset 4 in both
             // ifinfomsg and ifaddrmsg.
-            let if_index = read_u32_ne(data, read_pos + NLMSG_HDRLEN + 4);
+            let if_index = read_u32_ne(data, read_pos + NLMSG_HDRLEN + 4)
+                .unwrap_or(0);
             vpn_indices.contains(&if_index)
         } else {
             false
