@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Default scope suggestions shown to the user when they first activate
-      this module in LSPosed/Vector. Empty by default — the user picks
-      target apps via the module's own MainActivity picker, which is then
-      cross-checked at hook time via XSharedPreferences. You can leave this
-      empty and just activate the module against specific apps manually.
+      Recommended scope shown when activating this module in LSPosed.
+      "android" = System Framework (system_server), which is the only
+      process this module hooks. The module's handleLoadPackage filters
+      for system_server and ignores everything else.
     -->
-    <string-array name="xposedscope"></string-array>
+    <string-array name="xposedscope">
+        <item>android</item>
+    </string-array>
 </resources>
