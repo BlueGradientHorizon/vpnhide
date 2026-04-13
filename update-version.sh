@@ -39,3 +39,30 @@ echo "  zygisk/module/module.prop"
 echo "  zygisk/Cargo.toml"
 echo "  lsposed/app/build.gradle.kts"
 echo "  lsposed/native/Cargo.toml"
+
+# Generate Magisk/KSU updateJson files
+REPO="https://github.com/okhsunrog/vpnhide"
+RAW="https://raw.githubusercontent.com/okhsunrog/vpnhide/main"
+
+KMOD_KMIS=("android12-5.10" "android13-5.10" "android13-5.15" "android14-5.15" "android14-6.1" "android15-6.6" "android16-6.12")
+for kmi in "${KMOD_KMIS[@]}"; do
+    cat > "update-kmod-${kmi}.json" <<EOJSON
+{
+  "version": "v${VERSION}",
+  "versionCode": ${VERSION_CODE},
+  "zipUrl": "${REPO}/releases/download/v${VERSION}/vpnhide-kmod-${kmi}.zip",
+  "changelog": "${REPO}/releases/tag/v${VERSION}"
+}
+EOJSON
+    echo "  update-kmod-${kmi}.json"
+done
+
+cat > "update-zygisk.json" <<EOJSON
+{
+  "version": "v${VERSION}",
+  "versionCode": ${VERSION_CODE},
+  "zipUrl": "${REPO}/releases/download/v${VERSION}/vpnhide-zygisk.zip",
+  "changelog": "${REPO}/releases/tag/v${VERSION}"
+}
+EOJSON
+echo "  update-zygisk.json"

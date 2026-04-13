@@ -85,6 +85,7 @@ jobs:
       - name: Package KSU module zip
         run: |
           cp kmod/vpnhide_kmod.ko kmod/module/
+          echo "updateJson=https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-kmod-${{ matrix.kmi }}.json" >> kmod/module/module.prop
           apt-get update -qq && apt-get install -y -qq zip >/dev/null
           (cd kmod/module && zip -qr "$GITHUB_WORKSPACE/vpnhide-kmod-${{ matrix.kmi }}.zip" .)
 
@@ -122,7 +123,10 @@ jobs:
           restore-keys: cargo-${{ runner.os }}-
 
       - name: Build module zip
-        run: cd zygisk && ./build-zip.sh
+        run: |
+          cd zygisk
+          echo "updateJson=https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-zygisk.json" >> module/module.prop
+          ./build-zip.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
