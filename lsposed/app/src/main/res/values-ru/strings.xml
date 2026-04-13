@@ -48,6 +48,9 @@
     <string name="dashboard_issue_reboot">Хуки LSPosed требуют перезагрузки для активации.</string>
     <string name="dashboard_issue_no_targets">Целевые приложения не настроены. Перейдите во вкладку «Приложения».</string>
     <string name="dashboard_issue_version_mismatch">Несоответствие версий модуля: запущена %1$s, установлена %2$s. Перезагрузитесь для обновления.</string>
+    <string name="dashboard_issue_update_module">Версия %1$s %2$s старее версии приложения %3$s. Обновите модуль %1$s.</string>
+    <string name="dashboard_issue_update_app">Версия %1$s %2$s новее версии приложения %3$s. Обновите приложение VPN Hide.</string>
+    <string name="dashboard_issue_module_version_mismatch">Несоответствие версий %1$s: модуль %2$s, приложение %3$s. Держите их на одной версии.</string>
     <string name="dashboard_running_version">Версия запущенного модуля: %s</string>
 
     <!-- Diagnostics -->

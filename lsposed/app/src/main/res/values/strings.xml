@@ -64,6 +64,9 @@
     <string name="dashboard_issue_reboot">LSPosed hooks need a reboot to activate.</string>
     <string name="dashboard_issue_no_targets">No target apps configured. Go to Apps tab to select apps.</string>
     <string name="dashboard_issue_version_mismatch">Module version mismatch: running %1$s, installed %2$s. Reboot to apply the update.</string>
+    <string name="dashboard_issue_update_module">%1$s version %2$s is older than app version %3$s. Update the %1$s module.</string>
+    <string name="dashboard_issue_update_app">%1$s version %2$s is newer than app version %3$s. Update the VPN Hide app.</string>
+    <string name="dashboard_issue_module_version_mismatch">%1$s version mismatch: module %2$s, app %3$s. Keep them on the same version.</string>
     <string name="dashboard_running_version">Running module version: %s</string>
 
     <!-- Native check names -->

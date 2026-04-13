@@ -3,6 +3,7 @@ package dev.okhsunrog.vpnhide
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import java.io.File
 import dev.okhsunrog.vpnhide.BuildConfig
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -439,6 +440,55 @@ private fun loadDashboardState(
         }
     }
 
+    fun parseProps(raw: String): Map<String, String> = raw.lines().mapNotNull {
+        val parts = it.split("=", limit = 2)
+        if (parts.size == 2) parts[0] to parts[1] else null
+    }.toMap()
+
+    fun normalizeVersion(version: String): String = version.trim().removePrefix("v")
+
+    fun compareSemver(left: String, right: String): Int? {
+        fun parse(version: String): List<Int>? =
+            normalizeVersion(version).split('.').map { it.toIntOrNull() }.takeIf { parts ->
+                parts.isNotEmpty() && parts.all { it != null }
+            }?.map { it!! }
+
+        val l = parse(left) ?: return null
+        val r = parse(right) ?: return null
+        val maxSize = maxOf(l.size, r.size)
+        for (i in 0 until maxSize) {
+            val lv = l.getOrElse(i) { 0 }
+            val rv = r.getOrElse(i) { 0 }
+            if (lv != rv) return lv.compareTo(rv)
+        }
+        return 0
+    }
+
+    fun buildModuleVersionIssue(moduleName: String, moduleVersion: String, appVersion: String): String {
+        val normalizedModuleVersion = normalizeVersion(moduleVersion)
+        val normalizedAppVersion = normalizeVersion(appVersion)
+        return when (compareSemver(normalizedModuleVersion, normalizedAppVersion)) {
+            null, 0 -> res.getString(
+                R.string.dashboard_issue_module_version_mismatch,
+                moduleName,
+                moduleVersion,
+                appVersion,
+            )
+            in Int.MIN_VALUE..-1 -> res.getString(
+                R.string.dashboard_issue_update_module,
+                moduleName,
+                moduleVersion,
+                appVersion,
+            )
+            else -> res.getString(
+                R.string.dashboard_issue_update_app,
+                moduleName,
+                moduleVersion,
+                appVersion,
+            )
+        }
+    }
+
     // kmod
     val (kmodInstalled, kmodVersion) = parseModuleProp(KMOD_MODULE_DIR)
     val (_, procExists) = suExec("[ -f $PROC_TARGETS ] && echo 1 || echo 0")
@@ -453,23 +503,30 @@ private fun loadDashboardState(
 
     // zygisk
     val (zygiskInstalled, zygiskVersion) = parseModuleProp(ZYGISK_MODULE_DIR)
+    val zygiskStatusFile = File(context.filesDir, ZYGISK_STATUS_FILE_NAME)
+    val zygiskStatusRaw = try {
+        zygiskStatusFile.takeIf { it.isFile }?.readText().orEmpty()
+    } catch (e: Exception) {
+        Log.w(TAG, "failed to read zygisk status heartbeat: ${e.message}")
+        ""
+    }
+    val zygiskProps = parseProps(zygiskStatusRaw)
+    val (_, currentBootId) = suExec("cat /proc/sys/kernel/random/boot_id 2>/dev/null")
+    val zygiskBootId = zygiskProps["boot_id"]
+    val zygiskActive = zygiskInstalled && zygiskBootId != null && zygiskBootId == currentBootId.trim()
     val zygiskTargetCount = if (zygiskInstalled) countTargets(ZYGISK_TARGETS) else 0
     val zygisk: ModuleState = if (zygiskInstalled) {
-        ModuleState.Installed(zygiskVersion, true, zygiskTargetCount)
+        ModuleState.Installed(zygiskVersion, zygiskActive, zygiskTargetCount)
     } else {
         ModuleState.NotInstalled
     }
-    Log.i(TAG, "zygisk: $zygisk")
+    Log.i(TAG, "zygisk: $zygisk (heartbeatBootId=$zygiskBootId currentBootId=${currentBootId.trim()})")
 
     // lsposed hook status
     val (_, hookStatusRaw) = suExec("cat ${HookEntry.HOOK_STATUS_FILE} 2>/dev/null || true")
-    val hookProps = hookStatusRaw.lines().mapNotNull {
-        val parts = it.split("=", limit = 2)
-        if (parts.size == 2) parts[0] to parts[1] else null
-    }.toMap()
+    val hookProps = parseProps(hookStatusRaw)
     val hookVersion = hookProps["version"]
     val hookBootId = hookProps["boot_id"]
-    val (_, currentBootId) = suExec("cat /proc/sys/kernel/random/boot_id 2>/dev/null")
     val hooksActiveThisBoot = hookBootId != null && hookBootId == currentBootId.trim()
     val lsposedTargetCount = countTargets(LSPOSED_TARGETS)
 
@@ -488,11 +545,17 @@ private fun loadDashboardState(
     if (lsposed is LsposedState.NeedsReboot) {
         issues += res.getString(R.string.dashboard_issue_reboot)
     }
+    val appVersion = BuildConfig.VERSION_NAME
+    if (kmod is ModuleState.Installed && kmod.version != null && normalizeVersion(kmod.version) != normalizeVersion(appVersion)) {
+        issues += buildModuleVersionIssue(res.getString(R.string.dashboard_kmod), kmod.version, appVersion)
+    }
+    if (zygisk is ModuleState.Installed && zygisk.version != null && normalizeVersion(zygisk.version) != normalizeVersion(appVersion)) {
+        issues += buildModuleVersionIssue(res.getString(R.string.dashboard_zygisk), zygisk.version, appVersion)
+    }
     if (lsposed is LsposedState.Active) {
         if (lsposedTargetCount == 0) {
             issues += res.getString(R.string.dashboard_issue_no_targets)
         }
-        val appVersion = BuildConfig.VERSION_NAME
         val runningVersion = lsposed.version
         if (runningVersion != null && runningVersion != appVersion) {
             Log.w(TAG, "version mismatch: running=$runningVersion app=$appVersion")

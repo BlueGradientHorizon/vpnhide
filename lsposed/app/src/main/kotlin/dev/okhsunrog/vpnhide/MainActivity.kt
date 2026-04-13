@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
+import java.io.File
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -46,6 +47,7 @@ internal const val PROC_TARGETS = "/proc/vpnhide_targets"
 internal const val SS_UIDS_FILE = "/data/system/vpnhide_uids.txt"
 internal const val KMOD_MODULE_DIR = "/data/adb/modules/vpnhide_kmod"
 internal const val ZYGISK_MODULE_DIR = "/data/adb/modules/vpnhide_zygisk"
+internal const val ZYGISK_STATUS_FILE_NAME = "vpnhide_zygisk_active"
 
 data class AppEntry(
     val packageName: String,
@@ -98,6 +100,40 @@ internal fun suExec(cmd: String): Pair<Int, String> =
     }
 
 private suspend fun suExecAsync(cmd: String): Pair<Int, String> = withContext(Dispatchers.IO) { suExec(cmd) }
+
+internal fun cleanupStaleZygiskStatus(context: android.content.Context) {
+    val statusFile = File(context.filesDir, ZYGISK_STATUS_FILE_NAME)
+    if (!statusFile.isFile) return
+
+    val props = try {
+        statusFile.readLines().mapNotNull {
+            val parts = it.split("=", limit = 2)
+            if (parts.size == 2) parts[0] to parts[1] else null
+        }.toMap()
+    } catch (e: Exception) {
+        Log.w(TAG, "cleanupStaleZygiskStatus: failed to read heartbeat: ${e.message}")
+        emptyMap()
+    }
+
+    val heartbeatBootId = props["boot_id"]
+    val (_, currentBootIdRaw) = suExec("cat /proc/sys/kernel/random/boot_id 2>/dev/null")
+    val currentBootId = currentBootIdRaw.trim()
+    val stale =
+        heartbeatBootId.isNullOrBlank() ||
+            heartbeatBootId != currentBootId
+
+    if (stale) {
+        if (statusFile.delete()) {
+            Log.i(
+                TAG,
+                "cleanupStaleZygiskStatus: deleted stale heartbeat " +
+                    "(bootId=$heartbeatBootId currentBootId=$currentBootId)",
+            )
+        } else {
+            Log.w(TAG, "cleanupStaleZygiskStatus: failed to delete stale heartbeat")
+        }
+    }
+}
 
 /**
  * Ensure the VPN Hide app itself is in all 3 target lists + resolve UIDs.
@@ -201,6 +237,7 @@ private fun MainScreen() {
 
     LaunchedEffect(Unit) {
         selfNeedsRestart = withContext(Dispatchers.IO) {
+            cleanupStaleZygiskStatus(context)
             ensureSelfInTargets(context.packageName)
         }
     }
