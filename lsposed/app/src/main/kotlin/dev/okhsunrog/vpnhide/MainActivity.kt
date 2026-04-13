@@ -99,6 +99,60 @@ internal fun suExec(cmd: String): Pair<Int, String> =
 
 private suspend fun suExecAsync(cmd: String): Pair<Int, String> = withContext(Dispatchers.IO) { suExec(cmd) }
 
+/**
+ * Ensure the VPN Hide app itself is in all 3 target lists + resolve UIDs.
+ * Returns true if self had to be added to any list (= hooks may not be
+ * applied to the current process, restart needed for zygisk).
+ * Called once at app startup; result is shared with all screens.
+ */
+internal fun ensureSelfInTargets(selfPkg: String): Boolean {
+    var added = false
+
+    fun addIfMissing(path: String, dirCheck: String?) {
+        if (dirCheck != null) {
+            val (_, exists) = suExec("[ -d $dirCheck ] && echo 1 || echo 0")
+            if (exists.trim() != "1") {
+                Log.d(TAG, "ensureSelfInTargets: $dirCheck not found, skipping $path")
+                return
+            }
+        }
+        val (_, raw) = suExec("cat $path 2>/dev/null || true")
+        val existing = raw.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+        if (selfPkg in existing) {
+            Log.d(TAG, "ensureSelfInTargets: $selfPkg already in $path")
+            return
+        }
+        val newBody = "# Managed by VPN Hide app\n" +
+            (existing + selfPkg).sorted().joinToString("\n") + "\n"
+        val b64 = android.util.Base64.encodeToString(newBody.toByteArray(), android.util.Base64.NO_WRAP)
+        suExec("echo '$b64' | base64 -d > $path && chmod 644 $path")
+        Log.i(TAG, "ensureSelfInTargets: added $selfPkg to $path")
+        added = true
+    }
+
+    addIfMissing(KMOD_TARGETS, "/data/adb/vpnhide_kmod")
+    addIfMissing(ZYGISK_TARGETS, "/data/adb/vpnhide_zygisk")
+    suExec("mkdir -p /data/adb/vpnhide_lsposed")
+    addIfMissing(LSPOSED_TARGETS, null)
+
+    // Resolve UIDs so hooks pick us up immediately (kmod + lsposed support live reload)
+    val uidCmd = buildString {
+        append("ALL_PKGS=\"\$(pm list packages -U 2>/dev/null)\"")
+        append("; SELF_UID=\$(echo \"\$ALL_PKGS\" | grep '^package:$selfPkg ' | sed 's/.*uid://')")
+        append("; if [ -f $PROC_TARGETS ] && [ -n \"\$SELF_UID\" ]; then")
+        append("   EXISTING=\$(cat $PROC_TARGETS 2>/dev/null)")
+        append(";  echo \"\$EXISTING\" | grep -q \"^\$SELF_UID\$\" || echo \"\$SELF_UID\" >> $PROC_TARGETS")
+        append("; fi")
+        append("; if [ -n \"\$SELF_UID\" ]; then")
+        append("   EXISTING2=\$(cat $SS_UIDS_FILE 2>/dev/null)")
+        append(";  echo \"\$EXISTING2\" | grep -q \"^\$SELF_UID\$\" || { echo \"\$SELF_UID\" >> $SS_UIDS_FILE; chmod 644 $SS_UIDS_FILE; chcon u:object_r:system_data_file:s0 $SS_UIDS_FILE 2>/dev/null; }")
+        append("; fi")
+    }
+    suExec(uidCmd)
+    Log.d(TAG, "ensureSelfInTargets: done, added=$added")
+    return added
+}
+
 /** Quick root check: run `su -c id` and see if it succeeds. */
 private fun checkRootAccess(): Boolean {
     val (exitCode, stdout) = suExec("id")
@@ -140,8 +194,16 @@ private enum class Tab { Dashboard, Apps, Diagnostics }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreen() {
+    val context = LocalContext.current
     var currentTab by remember { mutableStateOf(Tab.Dashboard) }
     var showSystem by remember { mutableStateOf(false) }
+    var selfNeedsRestart by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        selfNeedsRestart = withContext(Dispatchers.IO) {
+            ensureSelfInTargets(context.packageName)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -195,7 +257,10 @@ private fun MainScreen() {
     ) { innerPadding ->
         when (currentTab) {
             Tab.Dashboard -> {
-                DashboardScreen(Modifier.padding(innerPadding))
+                DashboardScreen(
+                    selfNeedsRestart = selfNeedsRestart,
+                    modifier = Modifier.padding(innerPadding),
+                )
             }
 
             Tab.Apps -> {
@@ -206,7 +271,10 @@ private fun MainScreen() {
             }
 
             Tab.Diagnostics -> {
-                DiagnosticsScreen(Modifier.padding(innerPadding))
+                DiagnosticsScreen(
+                    selfNeedsRestart = selfNeedsRestart,
+                    modifier = Modifier.padding(innerPadding),
+                )
             }
         }
     }
@@ -498,9 +566,11 @@ fun AppPickerScreen(
     // Save effect
     if (saving) {
         LaunchedEffect(Unit) {
-            val kmodPkgs = allApps.filter { it.kmod }.map { it.packageName }.sorted()
-            val zygiskPkgs = allApps.filter { it.zygisk }.map { it.packageName }.sorted()
-            val lsposedPkgs = allApps.filter { it.lsposed }.map { it.packageName }.sorted()
+            // Always include self in all lists (self is hidden from UI but must stay in targets)
+            val selfPkg = context.packageName
+            val kmodPkgs = (allApps.filter { it.kmod }.map { it.packageName } + selfPkg).distinct().sorted()
+            val zygiskPkgs = (allApps.filter { it.zygisk }.map { it.packageName } + selfPkg).distinct().sorted()
+            val lsposedPkgs = (allApps.filter { it.lsposed }.map { it.packageName } + selfPkg).distinct().sorted()
             val header = context.getString(R.string.save_header_comment)
 
             try {

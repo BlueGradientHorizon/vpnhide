@@ -41,16 +41,6 @@ private data class CheckResults(
     val all get() = native + java
 }
 
-private sealed class SelfTargetState {
-    data object Checking : SelfTargetState()
-
-    data object Ready : SelfTargetState()
-
-    data object Adding : SelfTargetState()
-
-    data object NeedsRestart : SelfTargetState()
-}
-
 private suspend fun isVpnActive(): Boolean =
     withContext(Dispatchers.IO) {
         val (exitCode, output) = suExec("ls /sys/class/net/ 2>/dev/null")
@@ -70,85 +60,15 @@ private suspend fun isVpnActive(): Boolean =
         }
     }
 
-private suspend fun isSelfInTargetList(packageName: String): Boolean =
-    withContext(Dispatchers.IO) {
-        // Check all 3 target lists
-        listOf(KMOD_TARGETS, ZYGISK_TARGETS, LSPOSED_TARGETS).any { path ->
-            val (exitCode, output) = suExec("cat $path 2>/dev/null || true")
-            exitCode == 0 && output.lines().any { it.trim() == packageName }
-        }
-    }
-
-private suspend fun addSelfToTargetList(packageName: String): Boolean =
-    withContext(Dispatchers.IO) {
-        // Add self to each existing target list
-        fun addToFile(path: String): String {
-            val (_, existing) = suExec("cat $path 2>/dev/null || true")
-            val packages = existing.lines().map { it.trim() }
-                .filter { it.isNotEmpty() && !it.startsWith("#") }
-                .toMutableSet()
-            packages.add(packageName)
-            val body = "# Managed by VPN Hide app\n" + packages.sorted().joinToString("\n") + "\n"
-            return android.util.Base64.encodeToString(body.toByteArray(), android.util.Base64.NO_WRAP)
-        }
-
-        val cmd = buildString {
-            // Add to kmod targets if module installed
-            append("if [ -d /data/adb/vpnhide_kmod ]; then ")
-            val kmodB64 = addToFile(KMOD_TARGETS)
-            append("echo '$kmodB64' | base64 -d > $KMOD_TARGETS && chmod 644 $KMOD_TARGETS; fi")
-
-            // Add to zygisk targets if module installed
-            append(" ; if [ -d /data/adb/vpnhide_zygisk ]; then ")
-            val zygiskB64 = addToFile(ZYGISK_TARGETS)
-            append("echo '$zygiskB64' | base64 -d > $ZYGISK_TARGETS && chmod 644 $ZYGISK_TARGETS; fi")
-            append(" ; cp $ZYGISK_TARGETS $ZYGISK_MODULE_TARGETS 2>/dev/null; true")
-
-            // Always add to lsposed targets
-            val lsposedB64 = addToFile(LSPOSED_TARGETS)
-            append(" ; mkdir -p /data/adb/vpnhide_lsposed")
-            append(" ; echo '$lsposedB64' | base64 -d > $LSPOSED_TARGETS && chmod 644 $LSPOSED_TARGETS")
-
-            // Resolve kmod UIDs → /proc/vpnhide_targets
-            val kmodPkgs = run {
-                val (_, raw) = suExec("cat $KMOD_TARGETS 2>/dev/null || true")
-                raw.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toMutableSet()
-                    .also { it.add(packageName) }
-            }
-            append(" ; ALL_PKGS=\"\$(pm list packages -U 2>/dev/null)\"; UIDS=\"\"")
-            for (pkg in kmodPkgs.sorted()) {
-                append(" ; U=\$(echo \"\$ALL_PKGS\" | grep '^package:$pkg ' | sed 's/.*uid://')")
-                append(" ; if [ -n \"\$U\" ]; then if [ -z \"\$UIDS\" ]; then UIDS=\"\$U\"; else UIDS=\"\$UIDS\n\$U\"; fi; fi")
-            }
-            append(" ; if [ -n \"\$UIDS\" ]; then echo \"\$UIDS\" > $PROC_TARGETS 2>/dev/null; else echo > $PROC_TARGETS 2>/dev/null; fi")
-
-            // Resolve lsposed UIDs → vpnhide_uids.txt
-            val lsposedPkgs = run {
-                val (_, raw) = suExec("cat $LSPOSED_TARGETS 2>/dev/null || true")
-                raw.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toMutableSet()
-                    .also { it.add(packageName) }
-            }
-            append(" ; UIDS2=\"\"")
-            for (pkg in lsposedPkgs.sorted()) {
-                append(" ; U2=\$(echo \"\$ALL_PKGS\" | grep '^package:$pkg ' | sed 's/.*uid://')")
-                append(" ; if [ -n \"\$U2\" ]; then if [ -z \"\$UIDS2\" ]; then UIDS2=\"\$U2\"; else UIDS2=\"\$UIDS2\n\$U2\"; fi; fi")
-            }
-            append(" ; if [ -n \"\$UIDS2\" ]; then echo \"\$UIDS2\" > $SS_UIDS_FILE; else echo > $SS_UIDS_FILE; fi")
-            append(" ; chmod 644 $SS_UIDS_FILE 2>/dev/null; chcon u:object_r:system_data_file:s0 $SS_UIDS_FILE 2>/dev/null")
-        }
-
-        val (exitCode, _) = suExec(cmd)
-        exitCode == 0
-    }
-
 @Composable
-fun DiagnosticsScreen(modifier: Modifier = Modifier) {
+fun DiagnosticsScreen(
+    selfNeedsRestart: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
-    val packageName = context.packageName
     val cm = context.getSystemService(ConnectivityManager::class.java)
 
     var vpnDetected by remember { mutableStateOf<Boolean?>(null) }
-    var selfTargetState by remember { mutableStateOf<SelfTargetState>(SelfTargetState.Checking) }
     var results by remember { mutableStateOf<CheckResults?>(null) }
     var networkBlocked by remember { mutableStateOf(false) }
     var summary by remember { mutableStateOf<String?>(null) }
@@ -164,19 +84,9 @@ fun DiagnosticsScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(Unit) {
         vpnDetected = isVpnActive()
-
-        if (vpnDetected != true) return@LaunchedEffect
-
-        if (isSelfInTargetList(packageName)) {
-            selfTargetState = SelfTargetState.Ready
-        } else {
-            selfTargetState = SelfTargetState.Adding
-            val ok = addSelfToTargetList(packageName)
-            selfTargetState =
-                if (ok) SelfTargetState.NeedsRestart else SelfTargetState.Ready
+        if (vpnDetected == true && !selfNeedsRestart) {
+            updateResults(runAllChecks(cm, context))
         }
-
-        updateResults(runAllChecks(cm, context))
     }
 
     Column(
@@ -189,7 +99,6 @@ fun DiagnosticsScreen(modifier: Modifier = Modifier) {
         Spacer(Modifier.height(8.dp))
 
         if (vpnDetected == false) {
-            // No VPN — show only the banner, centered
             Box(
                 modifier = Modifier.fillMaxSize().weight(1f),
                 contentAlignment = Alignment.Center,
@@ -203,31 +112,18 @@ fun DiagnosticsScreen(modifier: Modifier = Modifier) {
             return@Column
         }
 
-        // VPN is active — show status banners
-        when {
-            selfTargetState == SelfTargetState.Adding -> {
-                StatusBanner(
-                    text = stringResource(R.string.banner_adding_self),
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
-
-            selfTargetState == SelfTargetState.NeedsRestart -> {
-                StatusBanner(
-                    text = stringResource(R.string.banner_added_self),
-                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                )
-            }
-
-            selfTargetState == SelfTargetState.Ready -> {
-                StatusBanner(
-                    text = stringResource(R.string.banner_ready),
-                    containerColor = Color(0xFF1B5E20).copy(alpha = 0.15f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+        if (selfNeedsRestart) {
+            StatusBanner(
+                text = stringResource(R.string.banner_added_self),
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+        } else {
+            StatusBanner(
+                text = stringResource(R.string.banner_ready),
+                containerColor = Color(0xFF1B5E20).copy(alpha = 0.15f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            )
         }
 
         if (networkBlocked) {

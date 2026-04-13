@@ -70,14 +70,17 @@ private data class DashboardState(
 // ── Screen ───────────────────────────────────────────────────────────────
 
 @Composable
-fun DashboardScreen(modifier: Modifier = Modifier) {
+fun DashboardScreen(
+    selfNeedsRestart: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val cm = context.getSystemService(ConnectivityManager::class.java)
 
     var state by remember { mutableStateOf<DashboardState?>(null) }
 
     LaunchedEffect(Unit) {
-        state = withContext(Dispatchers.IO) { loadDashboardState(cm, context) }
+        state = withContext(Dispatchers.IO) { loadDashboardState(cm, context, selfNeedsRestart) }
     }
 
     Column(
@@ -409,70 +412,16 @@ private fun StatusBanner(
 
 private const val TAG = "VpnHide-Dashboard"
 
-/**
- * Ensure the VPN Hide app itself is in all 3 target lists.
- * Returns true if self had to be added (= hooks not yet applied to this process).
- */
-private fun ensureSelfInTargets(selfPkg: String): Boolean {
-    var added = false
-
-    fun addToTargetsIfMissing(path: String, dirCheck: String?) {
-        if (dirCheck != null) {
-            val (_, exists) = suExec("[ -d $dirCheck ] && echo 1 || echo 0")
-            if (exists.trim() != "1") {
-                Log.d(TAG, "ensureSelfInTargets: $dirCheck not found, skipping $path")
-                return
-            }
-        }
-        val (_, raw) = suExec("cat $path 2>/dev/null || true")
-        val existing = raw.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
-        if (selfPkg in existing) {
-            Log.d(TAG, "ensureSelfInTargets: $selfPkg already in $path")
-            return
-        }
-        val newBody = "# Managed by VPN Hide app\n" +
-            (existing + selfPkg).sorted().joinToString("\n") + "\n"
-        val b64 = android.util.Base64.encodeToString(newBody.toByteArray(), android.util.Base64.NO_WRAP)
-        suExec("echo '$b64' | base64 -d > $path && chmod 644 $path")
-        Log.i(TAG, "ensureSelfInTargets: added $selfPkg to $path")
-        added = true
-    }
-
-    addToTargetsIfMissing(KMOD_TARGETS, "/data/adb/vpnhide_kmod")
-    addToTargetsIfMissing(ZYGISK_TARGETS, "/data/adb/vpnhide_zygisk")
-    suExec("mkdir -p /data/adb/vpnhide_lsposed")
-    addToTargetsIfMissing(LSPOSED_TARGETS, null)
-
-    // Resolve UIDs for kmod + lsposed so hooks pick us up immediately
-    val uidCmd = buildString {
-        append("ALL_PKGS=\"\$(pm list packages -U 2>/dev/null)\"")
-        append("; SELF_UID=\$(echo \"\$ALL_PKGS\" | grep '^package:$selfPkg ' | sed 's/.*uid://')")
-        append("; if [ -f $PROC_TARGETS ] && [ -n \"\$SELF_UID\" ]; then")
-        append("   EXISTING=\$(cat $PROC_TARGETS 2>/dev/null)")
-        append(";  echo \"\$EXISTING\" | grep -q \"^\$SELF_UID\$\" || echo \"\$SELF_UID\" >> $PROC_TARGETS")
-        append("; fi")
-        append("; if [ -n \"\$SELF_UID\" ]; then")
-        append("   EXISTING2=\$(cat $SS_UIDS_FILE 2>/dev/null)")
-        append(";  echo \"\$EXISTING2\" | grep -q \"^\$SELF_UID\$\" || { echo \"\$SELF_UID\" >> $SS_UIDS_FILE; chmod 644 $SS_UIDS_FILE; chcon u:object_r:system_data_file:s0 $SS_UIDS_FILE 2>/dev/null; }")
-        append("; fi")
-    }
-    suExec(uidCmd)
-    Log.d(TAG, "ensureSelfInTargets: done, added=$added")
-    return added
-}
-
 private fun loadDashboardState(
     cm: ConnectivityManager,
     context: android.content.Context,
+    selfNeedsRestart: Boolean,
 ): DashboardState {
     val issues = mutableListOf<String>()
     val res = context.resources
     val selfPkg = context.packageName
 
     Log.i(TAG, "=== Loading dashboard state ===")
-
-    // ── Ensure self in targets ──
-    val selfJustAdded = ensureSelfInTargets(selfPkg)
 
     // ── Module detection ──
     fun parseModuleProp(dir: String): Pair<Boolean, String?> {
@@ -553,11 +502,11 @@ private fun loadDashboardState(
 
     // ── Protection checks ──
     val vpnActive = isVpnActiveSync()
-    Log.i(TAG, "vpnActive=$vpnActive selfJustAdded=$selfJustAdded")
+    Log.i(TAG, "vpnActive=$vpnActive selfNeedsRestart=$selfNeedsRestart")
 
     val protection: ProtectionCheck = when {
         !vpnActive -> ProtectionCheck.NoVpn
-        selfJustAdded -> ProtectionCheck.NeedsRestart
+        selfNeedsRestart -> ProtectionCheck.NeedsRestart
         else -> {
             val native = if (hasNative) {
                 runNativeProtectionCheck()
