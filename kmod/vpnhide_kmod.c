@@ -46,10 +46,10 @@
 
 static bool debug_enabled;
 
-#define vpnhide_dbg(fmt, ...)						\
-	do {								\
-		if (debug_enabled)					\
-			pr_info(MODNAME ": " fmt, ##__VA_ARGS__);	\
+#define vpnhide_dbg(fmt, ...)                                     \
+	do {                                                      \
+		if (debug_enabled)                                \
+			pr_info(MODNAME ": " fmt, ##__VA_ARGS__); \
 	} while (0)
 
 /* ------------------------------------------------------------------ */
@@ -183,7 +183,7 @@ static const struct proc_ops targets_proc_ops = {
 /* ------------------------------------------------------------------ */
 
 static ssize_t debug_write(struct file *file, const char __user *ubuf,
-			    size_t count, loff_t *ppos)
+			   size_t count, loff_t *ppos)
 {
 	char c;
 
@@ -248,11 +248,11 @@ static int dev_ioctl_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 
 	if (!is_target_uid()) {
 		vpnhide_dbg("dev_ioctl_entry: uid=%u target=0 cmd=0x%x\n",
-			     from_kuid(&init_user_ns, current_uid()), data->cmd);
+			    from_kuid(&init_user_ns, current_uid()), data->cmd);
 		data->cmd = 0;
 	} else {
 		vpnhide_dbg("dev_ioctl_entry: uid=%u target=1 cmd=0x%x\n",
-			     from_kuid(&init_user_ns, current_uid()), data->cmd);
+			    from_kuid(&init_user_ns, current_uid()), data->cmd);
 	}
 
 	return 0;
@@ -278,8 +278,8 @@ static int dev_ioctl_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 	name[IFNAMSIZ - 1] = '\0';
 
 	if (is_vpn_ifname(name)) {
-		vpnhide_dbg("dev_ioctl_ret: hiding iface=%s cmd=0x%x\n",
-			     name, data->cmd);
+		vpnhide_dbg("dev_ioctl_ret: hiding iface=%s cmd=0x%x\n", name,
+			    data->cmd);
 		regs_set_return_value(regs, -ENODEV);
 	}
 
@@ -333,8 +333,8 @@ static int dev_ifconf_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 	data->ifconf_ptr = (void *)regs->regs[1];
 	data->target = is_target_uid();
 	vpnhide_dbg("dev_ifconf_entry: uid=%u target=%d ptr=%px\n",
-		     from_kuid(&init_user_ns, current_uid()), data->target,
-		     data->ifconf_ptr);
+		    from_kuid(&init_user_ns, current_uid()), data->target,
+		    data->ifconf_ptr);
 	return 0;
 }
 
@@ -369,7 +369,7 @@ static int dev_ifconf_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 	if (!data->target)
 		return 0;
 	vpnhide_dbg("dev_ifconf_ret: retval=%ld ptr=%px\n",
-		     regs_return_value(regs), data->ifconf_ptr);
+		    regs_return_value(regs), data->ifconf_ptr);
 	if (regs_return_value(regs) != 0 || !data->ifconf_ptr)
 		return 0;
 
@@ -392,7 +392,7 @@ static int dev_ifconf_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 		if (ifc.ifc_len != orig_len) {
 			put_user(ifc.ifc_len, &uifc->ifc_len);
 			vpnhide_dbg("ifconf filtered %d -> %d bytes\n",
-				orig_len, ifc.ifc_len);
+				    orig_len, ifc.ifc_len);
 		}
 	}
 #else
@@ -410,7 +410,7 @@ static int dev_ifconf_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 				  &kifc->ifc_len);
 		if (kifc->ifc_len != orig_len)
 			vpnhide_dbg("ifconf filtered %d -> %d bytes\n",
-				orig_len, kifc->ifc_len);
+				    orig_len, kifc->ifc_len);
 	}
 #endif
 	return 0;
@@ -447,7 +447,7 @@ static int rtnl_fill_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 
 	if (!is_target_uid()) {
 		vpnhide_dbg("rtnl_fill_entry: uid=%u target=0\n",
-			     from_kuid(&init_user_ns, current_uid()));
+			    from_kuid(&init_user_ns, current_uid()));
 		return 0;
 	}
 
@@ -461,12 +461,14 @@ static int rtnl_fill_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 	rcu_read_lock();
 	if (dev && is_vpn_ifname(dev->name)) {
 		data->should_filter = true;
-		vpnhide_dbg("rtnl_fill_entry: uid=%u target=1 iface=%s -> filter\n",
-			     from_kuid(&init_user_ns, current_uid()), dev->name);
+		vpnhide_dbg(
+			"rtnl_fill_entry: uid=%u target=1 iface=%s -> filter\n",
+			from_kuid(&init_user_ns, current_uid()), dev->name);
 	} else {
-		vpnhide_dbg("rtnl_fill_entry: uid=%u target=1 iface=%s -> pass\n",
-			     from_kuid(&init_user_ns, current_uid()),
-			     dev ? dev->name : "(null)");
+		vpnhide_dbg(
+			"rtnl_fill_entry: uid=%u target=1 iface=%s -> pass\n",
+			from_kuid(&init_user_ns, current_uid()),
+			dev ? dev->name : "(null)");
 	}
 	rcu_read_unlock();
 
@@ -539,8 +541,8 @@ static int inet6_fill_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 		data->saved_len = data->skb ? data->skb->len : 0;
 		data->should_filter = true;
 		vpnhide_dbg("inet6_fill_entry: uid=%u iface=%s -> filter\n",
-			     from_kuid(&init_user_ns, current_uid()),
-			     ifa->idev->dev->name);
+			    from_kuid(&init_user_ns, current_uid()),
+			    ifa->idev->dev->name);
 	}
 	rcu_read_unlock();
 
@@ -554,8 +556,8 @@ static int inet6_fill_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 	if (!data->should_filter || !data->skb)
 		return 0;
 
-	vpnhide_dbg("inet6_fill_ret: trimming skb %u -> %u\n",
-		     data->skb->len, data->saved_len);
+	vpnhide_dbg("inet6_fill_ret: trimming skb %u -> %u\n", data->skb->len,
+		    data->saved_len);
 	/* Undo whatever the fill function wrote to the skb */
 	skb_trim(data->skb, data->saved_len);
 	regs_set_return_value(regs, 0);
@@ -604,8 +606,8 @@ static int inet_fill_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 		data->saved_len = data->skb ? data->skb->len : 0;
 		data->should_filter = true;
 		vpnhide_dbg("inet_fill_entry: uid=%u iface=%s -> filter\n",
-			     from_kuid(&init_user_ns, current_uid()),
-			     ifa->ifa_dev->dev->name);
+			    from_kuid(&init_user_ns, current_uid()),
+			    ifa->ifa_dev->dev->name);
 	}
 	rcu_read_unlock();
 
@@ -619,8 +621,8 @@ static int inet_fill_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 	if (!data->should_filter || !data->skb)
 		return 0;
 
-	vpnhide_dbg("inet_fill_ret: trimming skb %u -> %u\n",
-		     data->skb->len, data->saved_len);
+	vpnhide_dbg("inet_fill_ret: trimming skb %u -> %u\n", data->skb->len,
+		    data->saved_len);
 	skb_trim(data->skb, data->saved_len);
 	regs_set_return_value(regs, 0);
 	return 0;
@@ -666,7 +668,7 @@ static int fib_route_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 	if (data->target && data->seq) {
 		data->start_count = data->seq->count;
 		vpnhide_dbg("fib_route_entry: uid=%u target=1\n",
-			     from_kuid(&init_user_ns, current_uid()));
+			    from_kuid(&init_user_ns, current_uid()));
 	} else {
 		data->start_count = 0;
 	}
@@ -720,7 +722,7 @@ static int fib_route_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 
 		if (is_vpn_ifname(ifname)) {
 			vpnhide_dbg("fib_route_ret: hiding route for %s\n",
-				     ifname);
+				    ifname);
 			/* Skip this line */
 			src = line_end;
 			continue;
@@ -797,8 +799,7 @@ static int __init vpnhide_init(void)
 	 * and the VPN Hide app (both root). Apps must not see the target list. */
 	targets_entry =
 		proc_create("vpnhide_targets", 0600, NULL, &targets_proc_ops);
-	debug_entry =
-		proc_create("vpnhide_debug", 0600, NULL, &debug_proc_ops);
+	debug_entry = proc_create("vpnhide_debug", 0600, NULL, &debug_proc_ops);
 
 	pr_info(MODNAME ": loaded — write UIDs to /proc/vpnhide_targets\n");
 	return 0;
