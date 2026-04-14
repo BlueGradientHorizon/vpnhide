@@ -89,7 +89,7 @@ fun DashboardScreen(
         Spacer(Modifier.height(8.dp))
         ModuleCard(stringResource(R.string.dashboard_kmod), s.kmod)
         Spacer(Modifier.height(8.dp))
-        ModuleCard(stringResource(R.string.dashboard_zygisk), s.zygisk)
+        ModuleCard(stringResource(R.string.dashboard_zygisk), s.zygisk, selfNeedsRestart)
         s.nativeInstallRecommendation?.let { recommendation ->
             Spacer(Modifier.height(8.dp))
             NativeInstallRecommendationCard(recommendation)
@@ -162,6 +162,7 @@ fun DashboardScreen(
 private fun ModuleCard(
     name: String,
     state: ModuleState,
+    selfNeedsRestart: Boolean = false,
 ) {
     val darkTheme = isSystemInDarkTheme()
     when (state) {
@@ -181,10 +182,10 @@ private fun ModuleCard(
                 name = name,
                 version = state.version,
                 subtitle =
-                    if (active) {
-                        stringResource(R.string.dashboard_active_targets, state.targetCount)
-                    } else {
-                        stringResource(R.string.dashboard_installed_inactive)
+                    when {
+                        active -> stringResource(R.string.dashboard_active_targets, state.targetCount)
+                        selfNeedsRestart -> stringResource(R.string.dashboard_installed_restart_app)
+                        else -> stringResource(R.string.dashboard_installed_inactive)
                     },
                 dotColor = if (active) Color(0xFF4CAF50) else Color(0xFFFF9800),
                 containerColor =

@@ -85,7 +85,7 @@ private enum class Tab { Dashboard, Apps, Diagnostics }
 private fun MainScreen() {
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(Tab.Dashboard) }
-    var selfNeedsRestart by remember { mutableStateOf(false) }
+    var selfNeedsRestart by remember { mutableStateOf<Boolean?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var searchActive by remember { mutableStateOf(false) }
     var showSystem by remember { mutableStateOf(false) }
@@ -231,28 +231,38 @@ private fun MainScreen() {
             }
         },
     ) { innerPadding ->
-        when (currentTab) {
-            Tab.Dashboard -> {
-                DashboardScreen(
-                    selfNeedsRestart = selfNeedsRestart,
-                    modifier = Modifier.padding(innerPadding),
-                )
+        val restart = selfNeedsRestart
+        if (restart == null) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
             }
+        } else {
+            when (currentTab) {
+                Tab.Dashboard -> {
+                    DashboardScreen(
+                        selfNeedsRestart = restart,
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                }
 
-            Tab.Apps -> {
-                AppPickerScreen(
-                    searchQuery = searchQuery,
-                    showSystem = showSystem,
-                    showRussianOnly = showRussianOnly,
-                    modifier = Modifier.padding(innerPadding),
-                )
-            }
+                Tab.Apps -> {
+                    AppPickerScreen(
+                        searchQuery = searchQuery,
+                        showSystem = showSystem,
+                        showRussianOnly = showRussianOnly,
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                }
 
-            Tab.Diagnostics -> {
-                DiagnosticsScreen(
-                    selfNeedsRestart = selfNeedsRestart,
-                    modifier = Modifier.padding(innerPadding),
-                )
+                Tab.Diagnostics -> {
+                    DiagnosticsScreen(
+                        selfNeedsRestart = restart,
+                        modifier = Modifier.padding(innerPadding),
+                    )
+                }
             }
         }
     }

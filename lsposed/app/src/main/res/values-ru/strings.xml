@@ -36,6 +36,7 @@
     <string name="dashboard_lsposed_module">VPN Hide LSPosed-хук</string>
     <string name="dashboard_not_installed">Не установлен</string>
     <string name="dashboard_installed_inactive">Установлен, неактивен</string>
+    <string name="dashboard_installed_restart_app">Установлен, перезапустите приложение</string>
     <string name="dashboard_active_targets">Активен · целей: %d</string>
     <string name="dashboard_reboot_needed">Требуется перезагрузка</string>
     <string name="dashboard_protection">Статус защиты</string>

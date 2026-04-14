@@ -52,6 +52,7 @@
     <string name="dashboard_lsposed_module">VPN Hide LSPosed hook</string>
     <string name="dashboard_not_installed">Not installed</string>
     <string name="dashboard_installed_inactive">Installed, inactive</string>
+    <string name="dashboard_installed_restart_app">Installed, restart app to activate</string>
     <string name="dashboard_active_targets">Active · %d target(s)</string>
     <string name="dashboard_reboot_needed">Reboot needed</string>
     <string name="dashboard_protection">Protection status</string>
