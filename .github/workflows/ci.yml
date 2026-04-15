@@ -199,16 +199,27 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist/
           merge-multiple: true
 
+      - name: Extract release notes from changelog
+        run: |
+          TAG="${{ github.ref_name }}"
+          awk -v t="^## ${TAG}\$" '$0~t{flag=1;next} /^## v/{flag=0} flag' \
+            update-json/changelog.md > release-notes.md
+          echo "=== release-notes.md ==="
+          cat release-notes.md
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             dist/*.zip
