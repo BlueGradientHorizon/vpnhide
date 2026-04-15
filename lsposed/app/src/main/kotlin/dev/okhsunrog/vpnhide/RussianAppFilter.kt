@@ -23,6 +23,7 @@ private val KNOWN_RUSSIAN_PREFIXES =
         "com.vkontakte",
         "com.wildberries",
         "com.yandex",
+        "gb.sweetlifecl",
         "io.ozon",
         "me.sovcombank",
     )
