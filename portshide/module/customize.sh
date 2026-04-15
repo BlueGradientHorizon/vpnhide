@@ -15,7 +15,7 @@ set_perm "$PERSIST_DIR" 0 0 0755
 if [ ! -f "$PERSIST_OBSERVERS" ]; then
     cat > "$PERSIST_OBSERVERS" <<'EOF'
 # vpnhide-ports observers
-# One UID per line. Lines starting with '#' are comments.
+# One package name per line. Lines starting with '#' are comments.
 # Managed via the VPN Hide app.
 EOF
 fi

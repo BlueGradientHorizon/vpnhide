@@ -101,33 +101,26 @@ fun PortsHidingScreen(
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val (_, detect) = suExec("[ -d $PORTS_MODULE_DIR ] && echo 1 || echo 0")
-            val installed = detect.trim() == "1"
+            // Read module.prop rather than [ -d ]: on KSU-Next a pending-removal
+            // module keeps the directory with a `remove` flag file until reboot;
+            // an unreadable module.prop signals "not really installed anymore".
+            val (exitCode, _) = suExec("cat $PORTS_MODULE_DIR/module.prop >/dev/null 2>&1")
+            val installed = exitCode == 0
             moduleInstalled = installed
             if (!installed) {
                 loading = false
                 return@withContext
             }
 
-            // Read observer UIDs and resolve to package names.
+            // observers.txt stores package names (resolved to UIDs at apply time
+            // inside the module script). Read them directly — no UID mapping needed.
             val (_, raw) = suExec("cat $PORTS_OBSERVERS_FILE 2>/dev/null || true")
-            val observerUids =
+            val observerNames =
                 raw
                     .lines()
                     .map { it.trim() }
                     .filter { it.isNotEmpty() && !it.startsWith("#") }
-                    .mapNotNull { it.toIntOrNull() }
                     .toSet()
-
-            val (_, listing) = suExec("pm list packages -U 2>/dev/null")
-            val uidToPkg =
-                listing
-                    .lines()
-                    .mapNotNull { line ->
-                        val m = Regex("^package:(\\S+) uid:(\\d+)").find(line) ?: return@mapNotNull null
-                        m.groupValues[1] to m.groupValues[2].toInt()
-                    }.associate { (pkg, uid) -> uid to pkg }
-            val observerNames = observerUids.mapNotNull { uidToPkg[it] }.toSet()
 
             val selfPkg = context.packageName
             val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
@@ -163,15 +156,12 @@ fun PortsHidingScreen(
         }
     }
 
-    when (moduleInstalled) {
-        null, true -> {
-            Unit
-        }
-
-        false -> {
-            NotInstalledCard(modifier = modifier)
-            return
-        }
+    if (moduleInstalled == false) {
+        NotInstalledCard(modifier = modifier)
+        return
+    }
+    if (moduleInstalled == null) {
+        // Still detecting; render nothing yet (loading spinner kicks in below).
     }
 
     val filteredApps =
@@ -340,41 +330,17 @@ private fun buildPortsSaveCommand(
     header: String,
     observerPkgs: List<String>,
 ): String {
-    val parts = mutableListOf<String>()
-
-    // Resolve package names → UIDs and write observers.txt.
-    parts += "mkdir -p /data/adb/vpnhide_ports"
-    if (observerPkgs.isEmpty()) {
-        val emptyBody = "$header\n"
-        val b64 = android.util.Base64.encodeToString(emptyBody.toByteArray(), android.util.Base64.NO_WRAP)
-        parts +=
-            "echo '$b64' | base64 -d > $PORTS_OBSERVERS_FILE" +
-            " && chmod 644 $PORTS_OBSERVERS_FILE"
-    } else {
-        parts += buildPortsUidResolver(header, observerPkgs, PORTS_OBSERVERS_FILE)
-        parts += "chmod 644 $PORTS_OBSERVERS_FILE 2>/dev/null"
-    }
-
-    // Invoke apply script to install iptables rules immediately.
-    parts += "sh $PORTS_APPLY_SCRIPT"
-
-    return parts.joinToString(" ; ")
-}
-
-private fun buildPortsUidResolver(
-    header: String,
-    packages: List<String>,
-    outputFile: String,
-): String {
-    val headerB64 = android.util.Base64.encodeToString("$header\n".toByteArray(), android.util.Base64.NO_WRAP)
-    return buildString {
-        append("echo '$headerB64' | base64 -d > $outputFile")
-        append("; ALL_PKGS=\"\$(pm list packages -U 2>/dev/null)\"")
-        for (pkg in packages) {
-            append("; U=\$(echo \"\$ALL_PKGS\" | grep '^package:$pkg ' | sed 's/.*uid://')")
-            append("; [ -n \"\$U\" ] && echo \"\$U\" >> $outputFile")
-        }
-    }
+    // observers.txt stores package names (one per line). UID resolution lives
+    // entirely inside vpnhide_ports_apply.sh so app reinstalls (which rotate
+    // the UID) get picked up automatically on the next apply.
+    val body = "$header\n" + observerPkgs.joinToString("\n") + if (observerPkgs.isNotEmpty()) "\n" else ""
+    val b64 = android.util.Base64.encodeToString(body.toByteArray(), android.util.Base64.NO_WRAP)
+    return listOf(
+        "mkdir -p /data/adb/vpnhide_ports",
+        "echo '$b64' | base64 -d > $PORTS_OBSERVERS_FILE",
+        "chmod 644 $PORTS_OBSERVERS_FILE",
+        "sh $PORTS_APPLY_SCRIPT",
+    ).joinToString(" && ")
 }
 
 @Composable
