@@ -13,6 +13,17 @@
     <string name="mode_port_hiding">Ports</string>
     <string name="port_hiding_coming_soon">Coming soon</string>
 
+    <!-- Port hiding -->
+    <string name="ports_chip" translatable="false">P</string>
+    <string name="ports_module_not_installed_title">Ports module not installed</string>
+    <string name="ports_module_not_installed_body">Install vpnhide-ports.zip via KernelSU-Next or Magisk to block selected apps from reaching localhost ports. This hides locally-bound VPN/proxy daemons from apps that probe them via connect(127.0.0.1, PORT).</string>
+    <string name="ports_help_title">How port hiding works</string>
+    <string name="ports_hint_role">Tap P to mark an app as a proxy-hide observer. Observer apps receive ECONNREFUSED when they try to connect to any port on 127.0.0.1 or ::1 — indistinguishable from a real closed port.</string>
+    <string name="ports_hint_safe">Safe for banks, госуслуги, marketplaces, non-browser apps. Chromium-based browsers use localhost for dev/PWA features — avoid adding them as observers.</string>
+    <string name="ports_hint_reboot">Rules are re-applied on every Save. After reboot, the module restores them automatically via service.sh.</string>
+    <string name="ports_save_success">Saved · %1$d observer(s)</string>
+    <string name="ports_count" translatable="false">P: %d</string>
+
     <!-- App picker -->
     <string name="selected_count">%d selected</string>
     <string name="btn_save">Save</string>

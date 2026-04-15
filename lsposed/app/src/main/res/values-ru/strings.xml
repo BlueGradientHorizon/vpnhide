@@ -13,6 +13,15 @@
     <string name="mode_port_hiding">Порты</string>
     <string name="port_hiding_coming_soon">Скоро</string>
 
+    <!-- Port hiding -->
+    <string name="ports_module_not_installed_title">Модуль портов не установлен</string>
+    <string name="ports_module_not_installed_body">Установите vpnhide-ports.zip через KernelSU-Next или Magisk, чтобы блокировать подключения выбранных приложений к localhost-портам. Это скрывает локально поднятые VPN/прокси-демоны от приложений, которые пробуют connect(127.0.0.1, PORT).</string>
+    <string name="ports_help_title">Как работает скрытие портов</string>
+    <string name="ports_hint_role">Нажмите P, чтобы отметить приложение как observer для proxy-hide. Observer получит ECONNREFUSED при попытке подключения к любому порту на 127.0.0.1 или ::1 — неотличимо от реально закрытого порта.</string>
+    <string name="ports_hint_safe">Безопасно для банков, госуслуг, маркетплейсов, не-браузерных приложений. Chromium-браузеры используют localhost для dev/PWA — их не стоит делать observer\'ами.</string>
+    <string name="ports_hint_reboot">Правила перезаписываются при каждом Save. После ребута модуль восстанавливает их автоматически через service.sh.</string>
+    <string name="ports_save_success">Сохранено · наблюдателей: %1$d</string>
+
     <!-- App picker -->
     <string name="selected_count">%d выбрано</string>
     <string name="btn_save">Сохранить</string>
