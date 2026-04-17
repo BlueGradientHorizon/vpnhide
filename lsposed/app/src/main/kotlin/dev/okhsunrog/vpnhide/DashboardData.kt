@@ -171,15 +171,6 @@ internal fun loadDashboardState(
         }
     }
 
-    fun readTargetPackageSet(path: String): Set<String> {
-        val (_, out) = suExec("cat $path 2>/dev/null || true")
-        return out
-            .lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .toSet()
-    }
-
     fun parseProps(raw: String): Map<String, String> =
         raw
             .lines()
@@ -654,25 +645,7 @@ internal fun loadDashboardState(
         warn(res.getString(R.string.dashboard_issue_both_native_active))
     }
 
-    // W3: same package configured as a Tun target AND a Ports observer.
-    // Common trap for users with transparent-proxy setups (Clash/sing-box): the
-    // proxy client redirects the target app's traffic to 127.0.0.1:<proxy>, and
-    // our vpnhide_out chain REJECTs because destination is loopback with a
-    // matching observer UID — the target app "has no internet".
-    val targetsUnion =
-        (
-            readTargetPackageSet(KMOD_TARGETS) +
-                readTargetPackageSet(ZYGISK_TARGETS) +
-                readTargetPackageSet(LSPOSED_TARGETS)
-        ) - selfPkg
-    val observersSet = readTargetPackageSet(PORTS_OBSERVERS_FILE) - selfPkg
-    val targetObserverOverlap = (targetsUnion intersect observersSet).sorted()
-    if (targetObserverOverlap.isNotEmpty() && ports is ModuleState.Installed) {
-        val labels = targetObserverOverlap.map { resolveScopeEntryLabel(it) }.joinToString(", ")
-        warn(res.getString(R.string.dashboard_issue_target_observer_conflict, labels))
-    }
-
-    // W4: user has debug logging turned on — VPN Hide is writing verbose lines
+    // W3: user has debug logging turned on — VPN Hide is writing verbose lines
     // to logcat that a forensic reader with root can see. The flag file is
     // written by the Diagnostics → Debug logging toggle (separate PR); absent
     // file ⇒ default off ⇒ no warning.
@@ -681,7 +654,7 @@ internal fun loadDashboardState(
         warn(res.getString(R.string.dashboard_issue_debug_logging_on))
     }
 
-    // W5: SELinux Permissive exposes six detection vectors we rely on SELinux
+    // W4: SELinux Permissive exposes six detection vectors we rely on SELinux
     // to block (RTM_GETROUTE, /proc/net/{tcp,tcp6,udp,udp6,dev,fib_trie},
     // /sys/class/net). See the coverage table in the top-level README.
     val (_, getenforce) = suExec("getenforce 2>/dev/null")
