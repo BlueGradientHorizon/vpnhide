@@ -244,6 +244,7 @@ fun AppHidingScreen(
                                                         observer = if (newHidden) false else it.observer,
                                                     )
                                                 }
+
                                                 HidingRole.OBSERVER -> {
                                                     val newObserver = !it.observer
                                                     it.copy(
