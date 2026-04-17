@@ -1,7 +1,6 @@
 package dev.okhsunrog.vpnhide
 
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,7 +67,7 @@ internal object LogcatRecorder {
         try {
             file.createNewFile()
         } catch (t: Throwable) {
-            Log.w(TAG, "failed to create output file: ${t.message}")
+            VpnHideLog.w(TAG, "failed to create output file: ${t.message}")
             return null
         }
 
@@ -81,7 +80,7 @@ internal object LogcatRecorder {
                     .redirectErrorStream(true)
                     .start()
             } catch (t: Throwable) {
-                Log.w(TAG, "failed to spawn logcat via su: ${t.message}")
+                VpnHideLog.w(TAG, "failed to spawn logcat via su: ${t.message}")
                 return null
             }
 
@@ -105,7 +104,7 @@ internal object LogcatRecorder {
                     }
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "pipe error: ${t.message}")
+                VpnHideLog.w(TAG, "pipe error: ${t.message}")
             }
         }
 

@@ -54,12 +54,17 @@ const APP_STATUS_FILE: &str = "/data/user/0/dev.okhsunrog.vpnhide/files/vpnhide_
 /// directory and migrating the legacy in-module file on first run.
 /// Targets filename within the module directory.
 const TARGETS_FILENAME: &str = "targets.txt";
+/// Runtime debug-logging flag file. Written by the VPN Hide app when
+/// the user toggles the setting. Absent or not "1" ⇒ logging is off —
+/// stealth-first default matches the rest of the project.
+const DEBUG_LOGGING_FILENAME: &str = "debug_logging";
 
 /// Initialize `android_logger` exactly once. Cheap to call from every
 /// forked process — subsequent calls are no-ops. The compile-time log
 /// filter is controlled by the `log` crate's `release_max_level_*`
 /// Cargo feature (see our `Cargo.toml`); anything below that level is
-/// monomorphized away to a no-op.
+/// monomorphized away to a no-op. Runtime level is then narrowed by
+/// [apply_debug_logging_flag] so the user's toggle silences logcat.
 fn init_logger() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
@@ -69,6 +74,38 @@ fn init_logger() {
                 .with_max_level(log::LevelFilter::Trace),
         );
     });
+}
+
+/// Read the debug-logging flag file from the module dir fd and drop
+/// the global `log` filter to `Off` unless the flag is set to `1`.
+/// Any read error is treated as "disabled": if the file doesn't exist
+/// yet (fresh install, flag never toggled), we shouldn't leak logs.
+fn apply_debug_logging_flag(dir_fd: std::os::fd::RawFd) {
+    use std::io::Read;
+    use std::os::fd::FromRawFd;
+    let enabled = (|| -> Option<bool> {
+        let filename = std::ffi::CString::new(DEBUG_LOGGING_FILENAME).ok()?;
+        let fd =
+            unsafe { libc::openat(dir_fd, filename.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
+        if fd < 0 {
+            return None;
+        }
+        let mut file = unsafe { std::fs::File::from_raw_fd(fd) };
+        let mut content = String::new();
+        file.read_to_string(&mut content).ok()?;
+        Some(content.trim() == "1")
+    })()
+    .unwrap_or(false);
+    // Leave errors on even when the user disables logging — the handful of
+    // `error!` calls (hook-install failures, status-file write failures)
+    // fire at most once per process and are the only signal we have if
+    // things go wrong. Same principle as HookLog.e on the Kotlin side.
+    let level = if enabled {
+        log::LevelFilter::Trace
+    } else {
+        log::LevelFilter::Error
+    };
+    log::set_max_level(level);
 }
 
 /// The module struct. Held as a `Default` singleton by the
@@ -141,6 +178,10 @@ impl ZygiskModule for VpnHide {
         // anti-tamper SDK) detect it and refuse to run, even though our
         // .so is dlclosed for non-target apps.
         let dir_fd = unsafe { OwnedFd::from_raw_fd(api.get_module_dir()) };
+        // Apply the user's debug-logging preference before anything below
+        // gets a chance to log. Default is Off, so silence is the no-config
+        // behavior even on a fresh install where the flag file is absent.
+        apply_debug_logging_flag(dir_fd.as_raw_fd());
         CACHED_TARGETS.get_or_init(|| load_targets_from_dir_fd(dir_fd.as_raw_fd()));
         debug!(
             "on_load: {} targets cached",

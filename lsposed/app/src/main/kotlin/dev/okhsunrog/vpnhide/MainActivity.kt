@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Load the user's debug-logging preference before anything else
+        // runs so the first suExec + Dashboard reload honor it.
+        VpnHideLog.init(applicationContext)
         setContent { VpnHideApp() }
     }
 }

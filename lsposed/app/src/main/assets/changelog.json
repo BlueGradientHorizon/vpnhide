@@ -9,6 +9,15 @@
             "ru": "На панели теперь одинаковый формат версий для всех модулей. Раньше карточки модулей ядра, Zygisk и скрытия портов показывали Magisk-стиль 'vX.Y.Z' из module.prop, а карточка LSPosed-хука — Android-стиль 'X.Y.Z' из versionName APK — на одном экране, для одной и той же версии. Префикс 'v' теперь снимается при парсинге, так что везде показывается 'X.Y.Z' (или 'X.Y.Z-N-gSHA' для dev-сборок)."
           }
         ]
+      },
+      {
+        "type": "added",
+        "items": [
+          {
+            "en": "Debug logging toggle in Diagnostics: off by default, keeps logcat near-silent from the app, LSPosed hooks (VpnHide-NC/NI/LP and package-visibility filter), and zygisk. Turn on only to collect logs for bug reports, reproduce, then turn off again. Errors always pass through so hook-install failures remain visible.",
+            "ru": "Переключатель отладочных логов на вкладке Диагностика: по умолчанию выключен, приложение, хуки LSPosed (VpnHide-NC/NI/LP, фильтр видимости пакетов) и zygisk почти ничего не пишут в logcat. Включайте только для сбора логов под баг-репорт, воспроизводите и выключайте обратно. Ошибки всегда видны, чтобы проблемы установки хуков не терялись."
+          }
+        ]
       }
     ]
   },

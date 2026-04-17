@@ -60,7 +60,7 @@ internal fun cleanupStaleZygiskStatus(context: android.content.Context) {
                     if (parts.size == 2) parts[0] to parts[1] else null
                 }.toMap()
         } catch (e: Exception) {
-            Log.w(TAG, "cleanupStaleZygiskStatus: failed to read heartbeat: ${e.message}")
+            VpnHideLog.w(TAG, "cleanupStaleZygiskStatus: failed to read heartbeat: ${e.message}")
             emptyMap()
         }
 
@@ -73,13 +73,13 @@ internal fun cleanupStaleZygiskStatus(context: android.content.Context) {
 
     if (stale) {
         if (statusFile.delete()) {
-            Log.i(
+            VpnHideLog.i(
                 TAG,
                 "cleanupStaleZygiskStatus: deleted stale heartbeat " +
                     "(bootId=$heartbeatBootId currentBootId=$currentBootId)",
             )
         } else {
-            Log.w(TAG, "cleanupStaleZygiskStatus: failed to delete stale heartbeat")
+            VpnHideLog.w(TAG, "cleanupStaleZygiskStatus: failed to delete stale heartbeat")
         }
     }
 }
@@ -100,14 +100,14 @@ internal fun ensureSelfInTargets(selfPkg: String): Boolean {
         if (dirCheck != null) {
             val (_, exists) = suExec("[ -d $dirCheck ] && echo 1 || echo 0")
             if (exists.trim() != "1") {
-                Log.d(TAG, "ensureSelfInTargets: $dirCheck not found, skipping $path")
+                VpnHideLog.d(TAG, "ensureSelfInTargets: $dirCheck not found, skipping $path")
                 return
             }
         }
         val (_, raw) = suExec("cat $path 2>/dev/null || true")
         val existing = raw.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
         if (selfPkg in existing) {
-            Log.d(TAG, "ensureSelfInTargets: $selfPkg already in $path")
+            VpnHideLog.d(TAG, "ensureSelfInTargets: $selfPkg already in $path")
             return
         }
         val newBody =
@@ -115,7 +115,7 @@ internal fun ensureSelfInTargets(selfPkg: String): Boolean {
                 (existing + selfPkg).sorted().joinToString("\n") + "\n"
         val b64 = Base64.encodeToString(newBody.toByteArray(), Base64.NO_WRAP)
         suExec("echo '$b64' | base64 -d > $path && chmod 644 $path")
-        Log.i(TAG, "ensureSelfInTargets: added $selfPkg to $path")
+        VpnHideLog.i(TAG, "ensureSelfInTargets: added $selfPkg to $path")
         added = true
     }
 
@@ -141,7 +141,7 @@ internal fun ensureSelfInTargets(selfPkg: String): Boolean {
                 " && chmod 644 $SS_HIDDEN_PKGS_FILE" +
                 " && chcon u:object_r:system_data_file:s0 $SS_HIDDEN_PKGS_FILE 2>/dev/null; true",
         )
-        Log.i(TAG, "ensureSelfInTargets: added $selfPkg to $SS_HIDDEN_PKGS_FILE")
+        VpnHideLog.i(TAG, "ensureSelfInTargets: added $selfPkg to $SS_HIDDEN_PKGS_FILE")
         // Don't flip `added`: PM hooks live in system_server and pick up the file change
         // immediately via inotify — no app restart is needed, unlike native (zygisk) hooks.
     }
@@ -163,6 +163,6 @@ internal fun ensureSelfInTargets(selfPkg: String): Boolean {
             append("; fi")
         }
     suExec(uidCmd)
-    Log.d(TAG, "ensureSelfInTargets: done, added=$added")
+    VpnHideLog.d(TAG, "ensureSelfInTargets: done, added=$added")
     return added
 }

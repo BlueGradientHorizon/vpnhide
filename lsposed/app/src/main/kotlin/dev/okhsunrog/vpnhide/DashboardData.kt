@@ -128,7 +128,7 @@ internal fun loadDashboardState(
     val res = context.resources
     val selfPkg = context.packageName
 
-    Log.i(TAG, "=== Loading dashboard state ===")
+    VpnHideLog.i(TAG, "=== Loading dashboard state ===")
 
     // ── Module detection ──
     // Strip the `v` prefix from module.prop versions at parse time so
@@ -310,10 +310,10 @@ internal fun loadDashboardState(
                     "ls -l $dbPath $walPath $shmPath 2>/dev/null || true",
             )
         if (copyExit != 0 || !dbCopy.isFile) {
-            Log.w(TAG, "failed to copy LSPosed config db for inspection: exit=$copyExit out=$copyOut")
+            VpnHideLog.w(TAG, "failed to copy LSPosed config db for inspection: exit=$copyExit out=$copyOut")
             return null
         }
-        Log.i(TAG, "lsposed db copy: ${copyOut.trim()}")
+        VpnHideLog.i(TAG, "lsposed db copy: ${copyOut.trim()}")
 
         return try {
             SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
@@ -365,7 +365,7 @@ internal fun loadDashboardState(
                     }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "failed to inspect LSPosed config db: ${e.message}")
+            VpnHideLog.w(TAG, "failed to inspect LSPosed config db: ${e.message}")
             null
         } finally {
             dbCopy.delete()
@@ -397,7 +397,7 @@ internal fun loadDashboardState(
             } else {
                 LsposedFramework.NotInstalled
             }
-        Log.i(TAG, "lsposed framework: $framework (raw=$out)")
+        VpnHideLog.i(TAG, "lsposed framework: $framework (raw=$out)")
         return framework
     }
 
@@ -412,7 +412,7 @@ internal fun loadDashboardState(
         } else {
             ModuleState.NotInstalled
         }
-    Log.i(TAG, "kmod: $kmod")
+    VpnHideLog.i(TAG, "kmod: $kmod")
 
     // zygisk
     val (zygiskInstalled, zygiskVersion) = parseModuleProp(ZYGISK_MODULE_DIR)
@@ -421,7 +421,7 @@ internal fun loadDashboardState(
         try {
             zygiskStatusFile.takeIf { it.isFile }?.readText().orEmpty()
         } catch (e: Exception) {
-            Log.w(TAG, "failed to read zygisk status heartbeat: ${e.message}")
+            VpnHideLog.w(TAG, "failed to read zygisk status heartbeat: ${e.message}")
             ""
         }
     val zygiskProps = parseProps(zygiskStatusRaw)
@@ -435,7 +435,7 @@ internal fun loadDashboardState(
         } else {
             ModuleState.NotInstalled
         }
-    Log.i(TAG, "zygisk: $zygisk (heartbeatBootId=$zygiskBootId currentBootId=${currentBootId.trim()})")
+    VpnHideLog.i(TAG, "zygisk: $zygisk (heartbeatBootId=$zygiskBootId currentBootId=${currentBootId.trim()})")
 
     // ports (iptables-based loopback blocker)
     val (portsInstalled, portsVersion) = parseModuleProp(PORTS_MODULE_DIR)
@@ -449,7 +449,7 @@ internal fun loadDashboardState(
         } else {
             ModuleState.NotInstalled
         }
-    Log.i(TAG, "ports: $ports")
+    VpnHideLog.i(TAG, "ports: $ports")
 
     val nativeInstallRecommendation =
         if (kmod is ModuleState.NotInstalled && zygisk is ModuleState.NotInstalled) {
@@ -457,7 +457,7 @@ internal fun loadDashboardState(
         } else {
             null
         }
-    Log.i(TAG, "nativeInstallRecommendation=$nativeInstallRecommendation")
+    VpnHideLog.i(TAG, "nativeInstallRecommendation=$nativeInstallRecommendation")
 
     // lsposed hook status
     val (_, hookStatusRaw) = suExec("cat ${HookEntry.HOOK_STATUS_FILE} 2>/dev/null || true")
@@ -521,7 +521,7 @@ internal fun loadDashboardState(
                 }
             }
         }
-    Log.i(
+    VpnHideLog.i(
         TAG,
         "lsposed: $lsposed (hookBootId=$hookBootId currentBootId=${currentBootId.trim()} framework=$lsposedFramework runtime=$lsposedRuntime config=$lsposedConfig)",
     )
@@ -589,14 +589,14 @@ internal fun loadDashboardState(
     if (lsposed is LsposedState.Active) {
         val runningVersion = lsposed.version
         if (runningVersion != null && runningVersion != appVersion) {
-            Log.w(TAG, "version mismatch: running=$runningVersion app=$appVersion")
+            VpnHideLog.w(TAG, "version mismatch: running=$runningVersion app=$appVersion")
             issues += res.getString(R.string.dashboard_issue_version_mismatch, runningVersion, appVersion)
         }
     }
 
     // ── Protection checks ──
     val vpnActive = isVpnActiveSync()
-    Log.i(TAG, "vpnActive=$vpnActive selfNeedsRestart=$selfNeedsRestart")
+    VpnHideLog.i(TAG, "vpnActive=$vpnActive selfNeedsRestart=$selfNeedsRestart")
 
     val protection: ProtectionCheck =
         when {
@@ -615,7 +615,7 @@ internal fun loadDashboardState(
                     } else {
                         NativeResult.NoModule
                     }
-                Log.i(TAG, "nativeResult=$native")
+                VpnHideLog.i(TAG, "nativeResult=$native")
 
                 val java =
                     if (lsposed is LsposedState.Active) {
@@ -623,14 +623,14 @@ internal fun loadDashboardState(
                     } else {
                         JavaResult.HooksInactive
                     }
-                Log.i(TAG, "javaResult=$java")
+                VpnHideLog.i(TAG, "javaResult=$java")
 
                 ProtectionCheck.Checked(native, java)
             }
         }
 
-    Log.i(TAG, "protection=$protection issues=$issues")
-    Log.i(TAG, "=== Dashboard state loaded ===")
+    VpnHideLog.i(TAG, "protection=$protection issues=$issues")
+    VpnHideLog.i(TAG, "=== Dashboard state loaded ===")
 
     return DashboardState(
         kmod = kmod,
@@ -652,13 +652,13 @@ private fun isVpnActiveSync(): Boolean {
             name.isNotEmpty() && vpnPrefixes.any { name.startsWith(it) }
         }
     if (vpnIfaces.isEmpty()) {
-        Log.d(TAG, "isVpnActive: no VPN interfaces found")
+        VpnHideLog.d(TAG, "isVpnActive: no VPN interfaces found")
         return false
     }
     return vpnIfaces.any { iface ->
         val (_, state) = suExec("cat /sys/class/net/$iface/operstate 2>/dev/null")
         val up = state.trim() == "unknown" || state.trim() == "up"
-        Log.d(TAG, "isVpnActive: $iface operstate=${state.trim()} up=$up")
+        VpnHideLog.d(TAG, "isVpnActive: $iface operstate=${state.trim()} up=$up")
         up
     }
 }
@@ -694,23 +694,24 @@ private fun runNativeProtectionCheck(): NativeResult {
             when {
                 result.startsWith("NETWORK_BLOCKED:") -> {
                     skipped++
-                    Log.d(TAG, "native[$name]: NETWORK_BLOCKED")
+                    VpnHideLog.d(TAG, "native[$name]: NETWORK_BLOCKED")
                 }
 
-                result.contains("SELinux") || result.contains("EACCES") ||
+                result.contains("SELinux") ||
+                    result.contains("EACCES") ||
                     result.contains("Permission denied") -> {
                     skipped++
-                    Log.d(TAG, "native[$name]: SELinux blocked, skipping")
+                    VpnHideLog.d(TAG, "native[$name]: SELinux blocked, skipping")
                 }
 
                 result.startsWith("PASS") -> {
                     passed++
-                    Log.d(TAG, "native[$name]: PASS")
+                    VpnHideLog.d(TAG, "native[$name]: PASS")
                 }
 
                 else -> {
                     failed++
-                    Log.w(TAG, "native[$name]: FAIL — $result")
+                    VpnHideLog.w(TAG, "native[$name]: FAIL — $result")
                 }
             }
         } catch (e: Exception) {
@@ -719,7 +720,7 @@ private fun runNativeProtectionCheck(): NativeResult {
         }
     }
 
-    Log.i(TAG, "native protection: passed=$passed failed=$failed skipped=$skipped")
+    VpnHideLog.i(TAG, "native protection: passed=$passed failed=$failed skipped=$skipped")
     return when {
         passed == 0 && failed == 0 -> NativeResult.Ok
 
@@ -736,12 +737,12 @@ private fun runNativeProtectionCheck(): NativeResult {
 private fun runJavaProtectionCheck(cm: ConnectivityManager): JavaResult {
     val net = cm.activeNetwork
     if (net == null) {
-        Log.d(TAG, "java: no active network")
+        VpnHideLog.d(TAG, "java: no active network")
         return JavaResult.Ok
     }
     val caps = cm.getNetworkCapabilities(net)
     if (caps == null) {
-        Log.d(TAG, "java: no capabilities")
+        VpnHideLog.d(TAG, "java: no capabilities")
         return JavaResult.Ok
     }
 
@@ -749,31 +750,31 @@ private fun runJavaProtectionCheck(cm: ConnectivityManager): JavaResult {
 
     val hasVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
     if (hasVpn) failed++
-    Log.d(TAG, "java: hasTransport(VPN)=$hasVpn")
+    VpnHideLog.d(TAG, "java: hasTransport(VPN)=$hasVpn")
 
     val notVpn = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
     if (!notVpn) failed++
-    Log.d(TAG, "java: hasCapability(NOT_VPN)=$notVpn")
+    VpnHideLog.d(TAG, "java: hasCapability(NOT_VPN)=$notVpn")
 
     val info = caps.transportInfo
     val isVpnTi = info?.javaClass?.name?.contains("VpnTransportInfo") == true
     if (isVpnTi) failed++
-    Log.d(TAG, "java: transportInfo=${info?.javaClass?.name} isVpn=$isVpnTi")
+    VpnHideLog.d(TAG, "java: transportInfo=${info?.javaClass?.name} isVpn=$isVpnTi")
 
     val vpnNets =
         cm.allNetworks.count {
             cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
         }
     if (vpnNets > 0) failed++
-    Log.d(TAG, "java: allNetworks vpnCount=$vpnNets")
+    VpnHideLog.d(TAG, "java: allNetworks vpnCount=$vpnNets")
 
     val lp = cm.getLinkProperties(net)
     val ifname = lp?.interfaceName
     val vpnPrefixes = listOf("tun", "wg", "ppp", "tap", "ipsec", "xfrm")
     val vpnIfname = ifname != null && vpnPrefixes.any { ifname.startsWith(it) }
     if (vpnIfname) failed++
-    Log.d(TAG, "java: linkProperties ifname=$ifname isVpn=$vpnIfname")
+    VpnHideLog.d(TAG, "java: linkProperties ifname=$ifname isVpn=$vpnIfname")
 
-    Log.i(TAG, "java protection: failed=$failed")
+    VpnHideLog.i(TAG, "java protection: failed=$failed")
     return if (failed == 0) JavaResult.Ok else JavaResult.Fail(failed)
 }

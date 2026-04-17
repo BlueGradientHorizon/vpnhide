@@ -58,17 +58,17 @@ internal object PackageVisibilityHooks {
                 try {
                     classLoader.loadClass(IPM_LEGACY)
                 } catch (t: Throwable) {
-                    XposedBridge.log("VpnHide/PV: neither $IPM_BASE nor $IPM_LEGACY found: ${t.message}")
+                    HookLog.e("VpnHide/PV: neither $IPM_BASE nor $IPM_LEGACY found: ${t.message}")
                     return
                 }
             }
-        XposedBridge.log("VpnHide/PV: hooking ${ipmClass.name}")
+        HookLog.i("VpnHide/PV: hooking ${ipmClass.name}")
 
         parceledListSliceClass =
             try {
                 classLoader.loadClass(PARCELED_LIST_SLICE)
             } catch (t: Throwable) {
-                XposedBridge.log("VpnHide/PV: ParceledListSlice not found: ${t.message}")
+                HookLog.e("VpnHide/PV: ParceledListSlice not found: ${t.message}")
                 return
             }
 
@@ -111,7 +111,7 @@ internal object PackageVisibilityHooks {
             val result = readUidFile(OBSERVER_UIDS_FILE)
             observerUids = result
             if (result.isNotEmpty()) {
-                XposedBridge.log("VpnHide/PV: loaded ${result.size} observer UIDs: $result")
+                HookLog.i("VpnHide/PV: loaded ${result.size} observer UIDs: $result")
             }
             return result
         }
@@ -124,7 +124,7 @@ internal object PackageVisibilityHooks {
             val result = readLineFile(HIDDEN_PKGS_FILE)
             hiddenPackages = result
             if (result.isNotEmpty()) {
-                XposedBridge.log("VpnHide/PV: loaded ${result.size} hidden packages: $result")
+                HookLog.i("VpnHide/PV: loaded ${result.size} hidden packages: $result")
             }
             return result
         }
@@ -142,7 +142,7 @@ internal object PackageVisibilityHooks {
                     .toSet()
             }
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide/PV: failed to read $path: ${t.message}")
+            HookLog.e("VpnHide/PV: failed to read $path: ${t.message}")
             emptySet()
         }
 
@@ -159,7 +159,7 @@ internal object PackageVisibilityHooks {
                     .toSet()
             }
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide/PV: failed to read $path: ${t.message}")
+            HookLog.e("VpnHide/PV: failed to read $path: ${t.message}")
             emptySet()
         }
 
@@ -172,12 +172,12 @@ internal object PackageVisibilityHooks {
                 ) {
                     when (path) {
                         "vpnhide_hidden_pkgs.txt" -> {
-                            XposedBridge.log("VpnHide/PV: hidden_pkgs changed, invalidating")
+                            HookLog.i("VpnHide/PV: hidden_pkgs changed, invalidating")
                             hiddenPackages = null
                         }
 
                         "vpnhide_observer_uids.txt" -> {
-                            XposedBridge.log("VpnHide/PV: observer_uids changed, invalidating")
+                            HookLog.i("VpnHide/PV: observer_uids changed, invalidating")
                             observerUids = null
                         }
                     }
@@ -185,7 +185,7 @@ internal object PackageVisibilityHooks {
             }
         fileObserver = observer
         observer.startWatching()
-        XposedBridge.log("VpnHide/PV: watching /data/system for config changes")
+        HookLog.i("VpnHide/PV: watching /data/system for config changes")
     }
 
     // ------------------------------------------------------------------
@@ -200,12 +200,12 @@ internal object PackageVisibilityHooks {
         try {
             val hooked = XposedBridge.hookAllMethods(clazz, methodName, handler)
             if (hooked.isEmpty()) {
-                XposedBridge.log("VpnHide/PV: no method '$methodName' on ${clazz.name}")
+                HookLog.e("VpnHide/PV: no method '$methodName' on ${clazz.name}")
             } else {
-                XposedBridge.log("VpnHide/PV: hooked $methodName (${hooked.size} overload(s))")
+                HookLog.i("VpnHide/PV: hooked $methodName (${hooked.size} overload(s))")
             }
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide/PV: hook $methodName failed: ${t::class.java.simpleName}: ${t.message}")
+            HookLog.e("VpnHide/PV: hook $methodName failed: ${t::class.java.simpleName}: ${t.message}")
         }
     }
 

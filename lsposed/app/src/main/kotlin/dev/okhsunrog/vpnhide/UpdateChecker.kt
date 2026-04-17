@@ -1,7 +1,6 @@
 package dev.okhsunrog.vpnhide
 
 import android.content.Context
-import android.util.Log
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -76,7 +75,7 @@ fun checkForUpdate(currentVersion: String): UpdateInfo? {
         conn.readTimeout = 5_000
         try {
             if (conn.responseCode != 200) {
-                Log.d(TAG, "GitHub API returned ${conn.responseCode}")
+                VpnHideLog.d(TAG, "GitHub API returned ${conn.responseCode}")
                 return null
             }
             val body = conn.inputStream.bufferedReader().readText()
@@ -84,7 +83,7 @@ fun checkForUpdate(currentVersion: String): UpdateInfo? {
             val remoteVersion = normalizeVersion(release.getString("tag_name"))
             val cmp = compareSemver(remoteVersion, normalizeVersion(currentVersion))
             if (cmp == null || cmp <= 0) {
-                Log.d(TAG, "No update: remote=$remoteVersion current=$currentVersion")
+                VpnHideLog.d(TAG, "No update: remote=$remoteVersion current=$currentVersion")
                 return null
             }
             val assets = release.getJSONArray("assets")
@@ -97,13 +96,13 @@ fun checkForUpdate(currentVersion: String): UpdateInfo? {
                 }
             }
             val downloadUrl = apkUrl ?: release.getString("html_url")
-            Log.i(TAG, "Update available: $remoteVersion (url=$downloadUrl)")
+            VpnHideLog.i(TAG, "Update available: $remoteVersion (url=$downloadUrl)")
             return UpdateInfo(latestVersion = remoteVersion, downloadUrl = downloadUrl)
         } finally {
             conn.disconnect()
         }
     } catch (e: Exception) {
-        Log.d(TAG, "Update check failed: ${e.message}")
+        VpnHideLog.d(TAG, "Update check failed: ${e.message}")
         return null
     }
 }
@@ -124,7 +123,7 @@ fun loadChangelog(context: Context): ChangelogData? =
             } ?: emptyList()
         ChangelogData(current = current, history = history)
     } catch (e: Exception) {
-        Log.w(TAG, "Failed to load changelog: ${e.message}")
+        VpnHideLog.w(TAG, "Failed to load changelog: ${e.message}")
         null
     }
 

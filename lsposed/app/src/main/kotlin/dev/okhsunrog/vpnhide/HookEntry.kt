@@ -7,7 +7,6 @@ import android.net.RouteInfo
 import android.os.Binder
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.io.File
@@ -49,7 +48,8 @@ class HookEntry : IXposedHookLoadPackage {
         if (!inSystemServer) return
 
         if (hookInstalled.compareAndSet(false, true)) {
-            XposedBridge.log("VpnHide: system_server detected, installing Binder hooks")
+            HookLog.install()
+            HookLog.i("VpnHide: system_server detected, installing Binder hooks")
             installSystemServerHooks()
             tryHook("PackageVisibility") { PackageVisibilityHooks.install(lpparam.classLoader) }
             writeHookStatusFile()
@@ -63,7 +63,7 @@ class HookEntry : IXposedHookLoadPackage {
         try {
             block()
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide: $name hook failed: ${t::class.java.simpleName}: ${t.message}")
+            HookLog.e("VpnHide: $name hook failed: ${t::class.java.simpleName}: ${t.message}")
         }
     }
 
@@ -111,7 +111,7 @@ class HookEntry : IXposedHookLoadPackage {
                 }
             }
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide: failed to sanitize mRoutes: ${t.message}")
+            HookLog.e("VpnHide: failed to sanitize mRoutes: ${t.message}")
         }
 
         try {
@@ -147,7 +147,7 @@ class HookEntry : IXposedHookLoadPackage {
                 }
             }
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide: failed to sanitize mStackedLinks: ${t.message}")
+            HookLog.e("VpnHide: failed to sanitize mStackedLinks: ${t.message}")
         }
 
         return modified
@@ -183,12 +183,12 @@ class HookEntry : IXposedHookLoadPackage {
                     }
                 }
             } catch (t: Throwable) {
-                XposedBridge.log("VpnHide: failed to read UIDs: ${t.message}")
+                HookLog.e("VpnHide: failed to read UIDs: ${t.message}")
             }
 
             val result: Set<Int> = uids.toSet()
             if (result.isNotEmpty()) {
-                XposedBridge.log("VpnHide: system_server loaded ${result.size} target UIDs: $result")
+                HookLog.i("VpnHide: system_server loaded ${result.size} target UIDs: $result")
             }
             // Always cache (even if empty) to avoid re-reading until invalidated
             systemServerTargetUids = result
@@ -225,9 +225,9 @@ class HookEntry : IXposedHookLoadPackage {
             val statusFile = File(HOOK_STATUS_FILE)
             statusFile.writeText(content)
             statusFile.setReadable(true, false)
-            XposedBridge.log("VpnHide: wrote hook status file (version=$version, boot_id=$bootId)")
+            HookLog.i("VpnHide: wrote hook status file (version=$version, boot_id=$bootId)")
         } catch (t: Throwable) {
-            XposedBridge.log("VpnHide: failed to write hook status: ${t.message}")
+            HookLog.e("VpnHide: failed to write hook status: ${t.message}")
         }
     }
 
@@ -249,14 +249,14 @@ class HookEntry : IXposedHookLoadPackage {
                     path: String?,
                 ) {
                     if (path == filename) {
-                        XposedBridge.log("VpnHide: $filename changed (event=$event), invalidating UID cache")
+                        HookLog.i("VpnHide: $filename changed (event=$event), invalidating UID cache")
                         systemServerTargetUids = null
                     }
                 }
             }
         targetUidsFileObserver = observer
         observer.startWatching()
-        XposedBridge.log("VpnHide: watching $dir for $filename changes (inotify)")
+        HookLog.i("VpnHide: watching $dir for $filename changes (inotify)")
     }
 
     /**
@@ -282,12 +282,12 @@ class HookEntry : IXposedHookLoadPackage {
                     val nc = param.thisObject as NetworkCapabilities
                     val transportTypes = XposedHelpers.getLongField(nc, "mTransportTypes")
                     val hasVpn = (transportTypes and (1L shl TRANSPORT_VPN)) != 0L
-                    // Verbose diagnostic log — one line per NC.writeToParcel call.
-                    // Filter with `logcat -s LSPosed-Bridge:* | grep VpnHide-NC`.
-                    // Volume is low relative to other system_server activity but
-                    // high enough that we may want to gate it behind a setting
-                    // once the code stabilises.
-                    XposedBridge.log(
+                    // Per-request diagnostic line. Gated by the debug-logging
+                    // toggle: these fire on every NC.writeToParcel inside
+                    // system_server and directly name the target UIDs we hook,
+                    // which is exactly what users hiding their setup want
+                    // kept out of logcat.
+                    HookLog.i(
                         "VpnHide-NC: uid=$callerUid target=$isTarget hasVpn=$hasVpn " +
                             "transports=0x${transportTypes.toString(16)}",
                     )
@@ -318,14 +318,14 @@ class HookEntry : IXposedHookLoadPackage {
                             writingCopy.set(false)
                         }
                         param.result = null
-                        XposedBridge.log("VpnHide-NC: uid=$callerUid STRIPPED VPN")
+                        HookLog.i("VpnHide-NC: uid=$callerUid STRIPPED VPN")
                     } catch (t: Throwable) {
-                        XposedBridge.log("VpnHide: NC.writeToParcel error: ${t.message}")
+                        HookLog.e("VpnHide: NC.writeToParcel error: ${t.message}")
                     }
                 }
             },
         )
-        XposedBridge.log("VpnHide: hooked NetworkCapabilities.writeToParcel")
+        HookLog.i("VpnHide: hooked NetworkCapabilities.writeToParcel")
     }
 
     /**
@@ -348,7 +348,7 @@ class HookEntry : IXposedHookLoadPackage {
                     val ni = param.thisObject as NetworkInfo
                     val type = XposedHelpers.getIntField(ni, "mNetworkType")
                     val isVpn = type == TYPE_VPN
-                    XposedBridge.log(
+                    HookLog.i(
                         "VpnHide-NI: uid=$callerUid target=$isTarget isVpn=$isVpn type=$type",
                     )
                     if (!isTarget) return
@@ -377,14 +377,14 @@ class HookEntry : IXposedHookLoadPackage {
                             writingCopy.set(false)
                         }
                         param.result = null
-                        XposedBridge.log("VpnHide-NI: uid=$callerUid STRIPPED VPN (disguised as WIFI)")
+                        HookLog.i("VpnHide-NI: uid=$callerUid STRIPPED VPN (disguised as WIFI)")
                     } catch (t: Throwable) {
-                        XposedBridge.log("VpnHide: NI.writeToParcel error: ${t.message}")
+                        HookLog.e("VpnHide: NI.writeToParcel error: ${t.message}")
                     }
                 }
             },
         )
-        XposedBridge.log("VpnHide: hooked NetworkInfo.writeToParcel")
+        HookLog.i("VpnHide: hooked NetworkInfo.writeToParcel")
     }
 
     /**
@@ -406,7 +406,7 @@ class HookEntry : IXposedHookLoadPackage {
                     val isTarget = loadTargetUids().contains(callerUid)
                     val lp = param.thisObject as LinkProperties
                     val ifname = XposedHelpers.getObjectField(lp, "mIfaceName") as? String
-                    XposedBridge.log("VpnHide-LP: uid=$callerUid target=$isTarget ifname=$ifname")
+                    HookLog.i("VpnHide-LP: uid=$callerUid target=$isTarget ifname=$ifname")
                     if (!isTarget) return
                     try {
                         val ctor = LinkProperties::class.java.getDeclaredConstructor(LinkProperties::class.java)
@@ -423,14 +423,14 @@ class HookEntry : IXposedHookLoadPackage {
                             writingCopy.set(false)
                         }
                         param.result = null
-                        XposedBridge.log("VpnHide-LP: uid=$callerUid STRIPPED VPN (ifname was $ifname)")
+                        HookLog.i("VpnHide-LP: uid=$callerUid STRIPPED VPN (ifname was $ifname)")
                     } catch (t: Throwable) {
-                        XposedBridge.log("VpnHide: LP.writeToParcel error: ${t.message}")
+                        HookLog.e("VpnHide: LP.writeToParcel error: ${t.message}")
                     }
                 }
             },
         )
-        XposedBridge.log("VpnHide: hooked LinkProperties.writeToParcel")
+        HookLog.i("VpnHide: hooked LinkProperties.writeToParcel")
     }
 
     companion object {
