@@ -131,10 +131,20 @@ internal fun loadDashboardState(
     Log.i(TAG, "=== Loading dashboard state ===")
 
     // ── Module detection ──
+    // Strip the `v` prefix from module.prop versions at parse time so
+    // everything downstream — dashboard rendering, issue text, update
+    // checks — sees a plain semver string. APK versionName has no `v`
+    // (Android convention); stamping `v` into module.prop follows the
+    // Magisk convention but mixes badly when both show side by side.
     fun parseModuleProp(dir: String): Pair<Boolean, String?> {
         val (exitCode, out) = suExec("cat $dir/module.prop 2>/dev/null")
         if (exitCode != 0 || out.isBlank()) return false to null
-        val version = out.lines().firstOrNull { it.startsWith("version=") }?.removePrefix("version=")
+        val version =
+            out
+                .lines()
+                .firstOrNull { it.startsWith("version=") }
+                ?.removePrefix("version=")
+                ?.let(::normalizeVersion)
         return true to version
     }
 
