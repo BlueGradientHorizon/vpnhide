@@ -38,6 +38,26 @@ data class BilingualItem(
 
 internal fun normalizeVersion(version: String): String = version.trim().removePrefix("v")
 
+// `git describe --tags --dirty` produces up to two extra suffixes:
+//   -<commits>-g<short-sha>   when HEAD is not on a tag
+//   -dirty                    when the working tree has uncommitted changes
+// Either or both are stripped. Pre-release tags (-rc1, -beta, -alpha.2)
+// are preserved because they don't match this shape.
+private val GIT_DESCRIBE_DEV_SUFFIX = Regex("""(?:-\d+-g[0-9a-f]+)?(?:-dirty)?$""")
+
+internal fun baseVersion(version: String): String = normalizeVersion(version).replace(GIT_DESCRIBE_DEV_SUFFIX, "")
+
+// True when a module's version is meaningfully different from the app's,
+// i.e. both have real base versions and the bases disagree. Dev APKs on
+// top of the same release do not count as mismatch.
+internal fun versionsMismatch(
+    moduleVersion: String?,
+    appVersion: String,
+): Boolean {
+    if (moduleVersion == null) return false
+    return baseVersion(moduleVersion) != baseVersion(appVersion)
+}
+
 internal fun compareSemver(
     left: String,
     right: String,

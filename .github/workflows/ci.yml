@@ -48,6 +48,8 @@ jobs:
         run: ktlint "lsposed/**/*.kt"
       - name: Android lint
         run: cd lsposed && ./gradlew --no-daemon :app:lint
+      - name: Kotlin unit tests
+        run: cd lsposed && ./gradlew --no-daemon :app:testDebugUnitTest
 
   kmod:
     runs-on: ubuntu-latest

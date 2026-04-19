@@ -69,7 +69,31 @@ sealed interface JavaResult {
     data object HooksInactive : JavaResult
 }
 
-private enum class NativeModuleKind { Kmod, Zygisk, Ports }
+internal enum class NativeModuleKind { Kmod, Zygisk, Ports }
+
+internal data class ModuleMismatch(
+    val kind: NativeModuleKind,
+    val moduleVersion: String,
+    val appVersion: String,
+)
+
+// Pure: given a list of (state, kind) pairs and the app version, returns
+// the subset whose base version disagrees with the app. Extracted so the
+// three kmod / zygisk / ports callsites in loadDashboardState share one
+// code path instead of three near-identical if-blocks.
+internal fun detectModuleMismatches(
+    modules: List<Pair<ModuleState, NativeModuleKind>>,
+    appVersion: String,
+): List<ModuleMismatch> =
+    modules.mapNotNull { (state, kind) ->
+        val installed = state as? ModuleState.Installed ?: return@mapNotNull null
+        val moduleVersion = installed.version ?: return@mapNotNull null
+        if (versionsMismatch(moduleVersion, appVersion)) {
+            ModuleMismatch(kind, moduleVersion, appVersion)
+        } else {
+            null
+        }
+    }
 
 private sealed interface LsposedRuntime {
     data object Inactive : LsposedRuntime
@@ -593,14 +617,17 @@ internal fun loadDashboardState(
     val appVersion = BuildConfig.VERSION_NAME
     // Version mismatches are warnings — modules keep working, user just needs to
     // update the lagging side. Full coverage is not affected by a patch-level gap.
-    if (kmod is ModuleState.Installed && kmod.version != null && normalizeVersion(kmod.version) != normalizeVersion(appVersion)) {
-        warn(buildModuleVersionIssue(NativeModuleKind.Kmod, kmod.version, appVersion))
-    }
-    if (zygisk is ModuleState.Installed && zygisk.version != null && normalizeVersion(zygisk.version) != normalizeVersion(appVersion)) {
-        warn(buildModuleVersionIssue(NativeModuleKind.Zygisk, zygisk.version, appVersion))
-    }
-    if (ports is ModuleState.Installed && ports.version != null && normalizeVersion(ports.version) != normalizeVersion(appVersion)) {
-        warn(buildModuleVersionIssue(NativeModuleKind.Ports, ports.version, appVersion))
+    val moduleMismatches =
+        detectModuleMismatches(
+            listOf(
+                kmod to NativeModuleKind.Kmod,
+                zygisk to NativeModuleKind.Zygisk,
+                ports to NativeModuleKind.Ports,
+            ),
+            appVersion,
+        )
+    moduleMismatches.forEach { mismatch ->
+        warn(buildModuleVersionIssue(mismatch.kind, mismatch.moduleVersion, mismatch.appVersion))
     }
     val totalTargets = lsposedTargetCount + kmodTargetCount + zygiskTargetCount
     if (totalTargets == 0) {
@@ -611,7 +638,7 @@ internal fun loadDashboardState(
     }
     if (lsposed is LsposedState.Active) {
         val runningVersion = lsposed.version
-        if (runningVersion != null && runningVersion != appVersion) {
+        if (versionsMismatch(runningVersion, appVersion)) {
             VpnHideLog.w(TAG, "version mismatch: running=$runningVersion app=$appVersion")
             warn(res.getString(R.string.dashboard_issue_version_mismatch, runningVersion, appVersion))
         }
