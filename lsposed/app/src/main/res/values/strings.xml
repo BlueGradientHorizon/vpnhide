@@ -91,6 +91,10 @@
     <string name="dashboard_not_installed">Not installed</string>
     <string name="dashboard_installed_inactive">Installed, inactive</string>
     <string name="dashboard_installed_restart_app">Installed, restart app to activate</string>
+    <string name="dashboard_kmod_broken_wrong_variant">Installed, wrong GKI variant</string>
+    <string name="dashboard_kmod_broken_unsupported_kernel">Installed, kernel not supported</string>
+    <string name="dashboard_kmod_broken_no_kprobes">Installed, kernel has no kprobes</string>
+    <string name="dashboard_kmod_broken_unknown_variant">Installed, did not load</string>
     <string name="dashboard_active_targets">Active · %d target(s)</string>
     <string name="dashboard_reboot_needed">Reboot needed</string>
     <string name="dashboard_protection">Protection status</string>

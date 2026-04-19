@@ -20,7 +20,18 @@ sealed interface ModuleState {
         // Only populated for kmod builds that carry the stamped `gkiVariant=` field
         // in module.prop (CI-built zips from v0.6.3+). Older builds report null.
         val gkiVariant: String? = null,
+        // Non-null when the module is installed but the installation itself
+        // is permanently broken (distinct from "active=false" which usually
+        // just means a reboot is pending). UI colors the card red.
+        val brokenReason: KmodBrokenReason? = null,
     ) : ModuleState
+}
+
+enum class KmodBrokenReason {
+    WrongVariant,
+    UnsupportedKernel,
+    MissingKprobes,
+    UnknownVariantInactive,
 }
 
 sealed interface LsposedState {
@@ -532,7 +543,9 @@ internal fun loadDashboardState(
     val (_, procExists) = suExec("[ -f $PROC_TARGETS ] && echo 1 || echo 0")
     val kmodActive = kmodProp.installed && procExists.trim() == "1"
     val kmodTargetCount = if (kmodProp.installed) countTargets(KMOD_TARGETS) else 0
-    val kmod: ModuleState =
+    // Built without brokenReason — populated below after kernelRecommendation
+    // and kmodLoadStatus are ready.
+    val kmodRaw: ModuleState =
         if (kmodProp.installed) {
             ModuleState.Installed(
                 version = kmodProp.version,
@@ -543,7 +556,7 @@ internal fun loadDashboardState(
         } else {
             ModuleState.NotInstalled
         }
-    VpnHideLog.i(TAG, "kmod: $kmod")
+    VpnHideLog.i(TAG, "kmodRaw: $kmodRaw")
 
     // zygisk
     val zygiskProp = parseModuleProp(ZYGISK_MODULE_DIR)
@@ -603,26 +616,48 @@ internal fun loadDashboardState(
     //    the user doesn't wait for the kmod to "just work".
     val recommendedKmi = kernelRecommendation?.recommendedGkiVariant
     val kmodVariantMismatch =
-        kmod is ModuleState.Installed &&
+        kmodRaw is ModuleState.Installed &&
             kernelRecommendation?.preferKmod == true &&
             recommendedKmi != null &&
-            kmod.gkiVariant != null &&
-            kmod.gkiVariant != recommendedKmi
+            kmodRaw.gkiVariant != null &&
+            kmodRaw.gkiVariant != recommendedKmi
     val kmodUnknownVariantBroken =
-        kmod is ModuleState.Installed &&
-            !kmod.active &&
-            kmod.gkiVariant == null &&
+        kmodRaw is ModuleState.Installed &&
+            !kmodRaw.active &&
+            kmodRaw.gkiVariant == null &&
             kernelRecommendation?.preferKmod == true
     val kmodOnUnsupportedKernel =
-        kmod is ModuleState.Installed &&
+        kmodRaw is ModuleState.Installed &&
             kernelRecommendation != null &&
             !kernelRecommendation.preferKmod
+    val kprobesMissing =
+        kmodLoadStatus?.freshForCurrentBoot == true && kmodLoadStatus.kretprobes == "n"
+    // Priority matches the Error emission below so the card color agrees with
+    // the banner: kprobes-missing first, then unsupported-kernel, then wrong-
+    // variant, then unknown-variant-inactive.
+    val kmodBrokenReason: KmodBrokenReason? =
+        when {
+            kmodRaw !is ModuleState.Installed -> null
+            kprobesMissing -> KmodBrokenReason.MissingKprobes
+            kmodOnUnsupportedKernel -> KmodBrokenReason.UnsupportedKernel
+            kmodVariantMismatch -> KmodBrokenReason.WrongVariant
+            kmodUnknownVariantBroken -> KmodBrokenReason.UnknownVariantInactive
+            else -> null
+        }
+    val kmod: ModuleState =
+        if (kmodRaw is ModuleState.Installed && kmodBrokenReason != null) {
+            kmodRaw.copy(brokenReason = kmodBrokenReason)
+        } else {
+            kmodRaw
+        }
+    VpnHideLog.i(TAG, "kmod (with brokenReason): $kmod")
+    // Only surface the blue "what to install" card when nothing is
+    // installed yet. Wrong-variant / broken / unsupported-kernel cases
+    // already emit a red error below with the same CTA — showing both
+    // duplicates the instruction.
     val nativeInstallRecommendation =
         kernelRecommendation?.takeIf {
-            (kmod is ModuleState.NotInstalled && zygisk is ModuleState.NotInstalled) ||
-                kmodVariantMismatch ||
-                kmodUnknownVariantBroken ||
-                kmodOnUnsupportedKernel
+            kmod is ModuleState.NotInstalled && zygisk is ModuleState.NotInstalled
         }
     VpnHideLog.i(
         TAG,
