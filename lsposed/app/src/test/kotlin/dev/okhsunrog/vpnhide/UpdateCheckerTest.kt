@@ -91,6 +91,21 @@ class BaseVersionTest {
     }
 
     @Test
+    fun `dirty suffix alone is stripped`() {
+        // build-version.sh emits `X.Y.Z-dirty` when HEAD is on a tag but
+        // the working tree has uncommitted changes.
+        assertEquals("0.6.2", baseVersion("0.6.2-dirty"))
+        assertEquals("0.6.2", baseVersion("v0.6.2-dirty"))
+    }
+
+    @Test
+    fun `dev suffix with dirty marker is stripped`() {
+        // Most common dev-build shape: -<commits>-g<sha>-dirty.
+        assertEquals("0.6.2", baseVersion("0.6.2-14-g1f2205e-dirty"))
+        assertEquals("1.0.0", baseVersion("v1.0.0-3-gdeadbee-dirty"))
+    }
+
+    @Test
     fun `rc and other pre-release tags are preserved`() {
         // Only the exact -N-gHASH shape is dev-build pollution. Pre-release
         // markers like -rc1, -beta, -alpha.2 must survive so that real
@@ -129,6 +144,12 @@ class VersionsMismatchTest {
     @Test
     fun `two dev builds on same base do not mismatch`() {
         assertFalse(versionsMismatch("0.6.2-3-gabc1234", "0.6.2-14-g1f2205e"))
+    }
+
+    @Test
+    fun `dirty dev build on same release does not mismatch`() {
+        assertFalse(versionsMismatch("0.6.2", "0.6.2-14-g1f2205e-dirty"))
+        assertFalse(versionsMismatch("0.6.2", "0.6.2-dirty"))
     }
 
     @Test
