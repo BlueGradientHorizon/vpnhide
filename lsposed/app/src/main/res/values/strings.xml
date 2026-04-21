@@ -96,6 +96,7 @@
     <string name="dashboard_kmod_broken_unsupported_kernel">Installed, kernel not supported</string>
     <string name="dashboard_kmod_broken_no_kprobes">Installed, kernel has no kprobes</string>
     <string name="dashboard_kmod_broken_unknown_variant">Installed, did not load</string>
+    <string name="dashboard_kmod_broken_ambiguous">Installed, did not load — try the other GKI variant</string>
     <string name="dashboard_active_targets">Active · %d target(s)</string>
     <string name="dashboard_reboot_needed">Device reboot needed</string>
     <string name="dashboard_protection">Protection status</string>
@@ -113,7 +114,9 @@
     <string name="vpn_off_retry">Retry</string>
     <string name="dashboard_install_recommendation_title">Installation recommendation</string>
     <string name="dashboard_install_recommendation_device">Your device: %1$s, kernel %2$s</string>
+    <string name="dashboard_install_recommendation_kmi_note">\"%1$s\" in the kernel version is the GKI Kernel Module Interface tag — it identifies the kernel\'s binary interface to modules, not your Android OS release.</string>
     <string name="dashboard_install_recommendation_kmod">Kernel module is recommended. Download %1$s.</string>
+    <string name="dashboard_install_recommendation_kmod_ambiguous">Kernel module is recommended. Your kernel\'s GKI branch isn\'t identifiable from uname -r, so try %1$s first; if it doesn\'t load after reboot, install %2$s instead.</string>
     <string name="dashboard_install_recommendation_zygisk">Kernel module is not supported for your device. Install %1$s.</string>
     <string name="dashboard_install_recommendation_zygisk_warning">Banking and payment apps detect Zygisk hooks and crash when Z is enabled for them. Leave Z off for those apps and rely on LSPosed (Java-level) hiding — native-level hiding won\'t work for them on a kernel without kmod support.</string>
     <string name="dashboard_issues">Errors (%d)</string>
@@ -147,6 +150,7 @@
     <!-- kmod variant / load diagnostics -->
     <string name="dashboard_issue_kmod_wrong_variant">Wrong kernel module variant: installed %1$s, your kernel needs %2$s. Uninstall the current kmod and install %3$s from the latest release.</string>
     <string name="dashboard_issue_kmod_unknown_variant">Kernel module is installed but not loading, and the zip doesn\'t identify which GKI variant it was built for. Reinstall %1$s from the latest release to make sure it matches your kernel.</string>
+    <string name="dashboard_issue_kmod_ambiguous_try_alternative">Kernel module %1$s failed to load this boot. Your kernel\'s GKI branch isn\'t identifiable from uname -r, so install %2$s instead.</string>
     <string name="dashboard_issue_kmod_load_failed">Kernel module failed to load. insmod error: %1$s. Use Diagnostics → Collect debug log to attach the full boot-time insmod output to a bug report.</string>
     <string name="dashboard_issue_kmod_not_supported_kernel">Your kernel (%1$s) has no matching vpnhide-kmod variant. Uninstall the kmod module and install %2$s instead.</string>
     <string name="dashboard_issue_kprobes_missing">Your kernel was built without CONFIG_KRETPROBES. The VPN Hide kernel module cannot work on this kernel. Uninstall kmod and use vpnhide-zygisk.zip instead.</string>

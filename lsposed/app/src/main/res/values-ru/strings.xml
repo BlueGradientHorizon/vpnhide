@@ -65,6 +65,7 @@
     <string name="dashboard_kmod_broken_unsupported_kernel">Установлен, ядро не поддерживается</string>
     <string name="dashboard_kmod_broken_no_kprobes">Установлен, ядро без kprobes</string>
     <string name="dashboard_kmod_broken_unknown_variant">Установлен, не загрузился</string>
+    <string name="dashboard_kmod_broken_ambiguous">Установлен, не загрузился — попробуйте второй GKI-вариант</string>
     <string name="dashboard_active_targets">Активен · целей: %d</string>
     <string name="dashboard_reboot_needed">Требуется перезагрузка устройства</string>
     <string name="dashboard_protection">Статус защиты</string>
@@ -82,7 +83,9 @@
     <string name="vpn_off_retry">Повторить</string>
     <string name="dashboard_install_recommendation_title">Рекомендация по установке</string>
     <string name="dashboard_install_recommendation_device">Ваше устройство: %1$s, ядро %2$s</string>
+    <string name="dashboard_install_recommendation_kmi_note">«%1$s» в версии ядра — это GKI Kernel Module Interface, обозначающий бинарный интерфейс ядра для модулей, а не версию Android на устройстве.</string>
     <string name="dashboard_install_recommendation_kmod">Рекомендуется модуль ядра. Скачайте %1$s.</string>
+    <string name="dashboard_install_recommendation_kmod_ambiguous">Рекомендуется модуль ядра. GKI-ветку вашего ядра не удаётся определить из uname -r, поэтому сначала попробуйте %1$s; если после ребута он не загрузится — установите %2$s.</string>
     <string name="dashboard_install_recommendation_zygisk">Для вашего устройства модуль ядра не поддерживается. Установите %1$s.</string>
     <string name="dashboard_install_recommendation_zygisk_warning">Банковские и платёжные приложения обнаруживают Zygisk-хуки и крашатся при включённом Z. Для таких приложений оставьте Z выключенным и полагайтесь на LSPosed (Java-уровень) — native-уровень защиты для них работать не будет без поддержки kmod в ядре.</string>
     <string name="dashboard_issues">Ошибки (%d)</string>
@@ -116,6 +119,7 @@
     <!-- kmod variant / load diagnostics -->
     <string name="dashboard_issue_kmod_wrong_variant">Неправильный вариант модуля ядра: установлен %1$s, вашему ядру нужен %2$s. Удалите текущий kmod и установите %3$s из последнего релиза.</string>
     <string name="dashboard_issue_kmod_unknown_variant">Модуль ядра установлен, но не загружается, и в zip не указано, под какой GKI-вариант он собран. Переустановите %1$s из последнего релиза, чтобы убедиться, что он подходит вашему ядру.</string>
+    <string name="dashboard_issue_kmod_ambiguous_try_alternative">Модуль ядра %1$s не загрузился при текущей загрузке. GKI-ветку вашего ядра не удаётся определить из uname -r — установите %2$s вместо него.</string>
     <string name="dashboard_issue_kmod_load_failed">Модуль ядра не загрузился. Ошибка insmod: %1$s. Чтобы приложить полный вывод insmod к багрепорту, нажмите Диагностика → Собрать отладочный лог.</string>
     <string name="dashboard_issue_kmod_not_supported_kernel">Для вашего ядра (%1$s) нет подходящего варианта vpnhide-kmod. Удалите модуль kmod и установите вместо него %2$s.</string>
     <string name="dashboard_issue_kprobes_missing">Ваше ядро собрано без CONFIG_KRETPROBES. Модуль ядра VPN Hide не может работать на таком ядре. Удалите kmod и используйте vpnhide-zygisk.zip.</string>

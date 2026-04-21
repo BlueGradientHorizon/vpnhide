@@ -32,6 +32,7 @@ enum class KmodBrokenReason {
     UnsupportedKernel,
     MissingKprobes,
     UnknownVariantInactive,
+    AmbiguousLoadFailed,
 }
 
 sealed interface LsposedState {
@@ -162,6 +163,15 @@ internal data class NativeInstallRecommendation(
     val recommendedArtifact: String,
     val recommendedGkiVariant: String?,
     val preferKmod: Boolean,
+    // Set when the kernel's GKI KMI couldn't be parsed from uname -r but the
+    // kernel series ships with multiple KMI variants (5.10: android12 / 13;
+    // 5.15: android13 / 14). Both candidates are valid picks — the UI shows
+    // the primary plus "if it doesn't load, try the alternative". Series with
+    // a single shipping variant (6.1 / 6.6 / 6.12) stay unambiguous even
+    // without a KMI tag.
+    val variantAmbiguous: Boolean = false,
+    val alternativeArtifact: String? = null,
+    val alternativeGkiVariant: String? = null,
 )
 
 // Boot-time diagnostics written by kmod/module/post-fs-data.sh into
@@ -339,15 +349,22 @@ internal fun loadDashboardState(
         val (_, kernelRaw) = suExec("uname -r 2>/dev/null")
         val kernelVersion = kernelRaw.trim().ifBlank { return null }
         val kernelSeries = parseKernelSeries(kernelVersion)
-        val kernelBranch = parseKernelAndroidBranch(kernelVersion)
-        val artifactKeyVersion = kernelBranch ?: androidMajorVersionLabel()
+        val kernelBranch = parseKernelAndroidBranch(kernelVersion) // GKI KMI
+        // User-facing device label only — never used for KMI matching below.
+        val deviceAndroidLabel = androidMajorVersionLabel()
 
         data class KmiMatch(
             val kmi: String,
             val zip: String,
         )
-        val supported =
-            when (artifactKeyVersion to kernelSeries) {
+
+        // Try exact KMI × series match. kernelBranch here is the GKI KMI
+        // extracted from uname -r, NOT the phone's Android OS release —
+        // these are independent spaces (an Android 15 ROM commonly runs an
+        // android12 KMI kernel), so we must not fall back to
+        // Build.VERSION.RELEASE here.
+        val exact: KmiMatch? =
+            when (kernelBranch to kernelSeries) {
                 "Android 12" to "5.10" -> KmiMatch("android12-5.10", "vpnhide-kmod-android12-5.10.zip")
                 "Android 13" to "5.10" -> KmiMatch("android13-5.10", "vpnhide-kmod-android13-5.10.zip")
                 "Android 13" to "5.15" -> KmiMatch("android13-5.15", "vpnhide-kmod-android13-5.15.zip")
@@ -357,26 +374,75 @@ internal fun loadDashboardState(
                 "Android 16" to "6.12" -> KmiMatch("android16-6.12", "vpnhide-kmod-android16-6.12.zip")
                 else -> null
             }
-
-        return if (supported != null) {
-            NativeInstallRecommendation(
-                androidVersion = artifactKeyVersion,
+        if (exact != null) {
+            return NativeInstallRecommendation(
+                androidVersion = deviceAndroidLabel,
                 kernelVersion = kernelVersion,
                 kernelBranch = kernelBranch,
-                recommendedArtifact = supported.zip,
-                recommendedGkiVariant = supported.kmi,
+                recommendedArtifact = exact.zip,
+                recommendedGkiVariant = exact.kmi,
                 preferKmod = true,
             )
-        } else {
-            NativeInstallRecommendation(
-                androidVersion = artifactKeyVersion,
+        }
+
+        // No KMI in uname (custom kernel stripped it). Fall back on kernel
+        // series alone. For 6.1 / 6.6 / 6.12 we ship a single KMI variant —
+        // the recommendation is still deterministic. For 5.10 / 5.15 two
+        // variants ship, so we surface both via variantAmbiguous and let
+        // the UI tell the user to try the alternative if the primary fails.
+        val fallback: Pair<KmiMatch, KmiMatch?>? =
+            when (kernelSeries) {
+                "5.10" -> {
+                    KmiMatch("android12-5.10", "vpnhide-kmod-android12-5.10.zip") to
+                        KmiMatch("android13-5.10", "vpnhide-kmod-android13-5.10.zip")
+                }
+
+                "5.15" -> {
+                    KmiMatch("android13-5.15", "vpnhide-kmod-android13-5.15.zip") to
+                        KmiMatch("android14-5.15", "vpnhide-kmod-android14-5.15.zip")
+                }
+
+                "6.1" -> {
+                    KmiMatch("android14-6.1", "vpnhide-kmod-android14-6.1.zip") to null
+                }
+
+                "6.6" -> {
+                    KmiMatch("android15-6.6", "vpnhide-kmod-android15-6.6.zip") to null
+                }
+
+                "6.12" -> {
+                    KmiMatch("android16-6.12", "vpnhide-kmod-android16-6.12.zip") to null
+                }
+
+                else -> {
+                    null
+                }
+            }
+        if (fallback != null) {
+            val (primary, alternative) = fallback
+            return NativeInstallRecommendation(
+                androidVersion = deviceAndroidLabel,
                 kernelVersion = kernelVersion,
                 kernelBranch = kernelBranch,
-                recommendedArtifact = "vpnhide-zygisk.zip",
-                recommendedGkiVariant = null,
-                preferKmod = false,
+                recommendedArtifact = primary.zip,
+                recommendedGkiVariant = primary.kmi,
+                preferKmod = true,
+                variantAmbiguous = alternative != null,
+                alternativeArtifact = alternative?.zip,
+                alternativeGkiVariant = alternative?.kmi,
             )
         }
+
+        // Pre-GKI series (<5.10) or unparseable — kmod binaries we ship
+        // can't load against such kernels' Module.symvers. Recommend zygisk.
+        return NativeInstallRecommendation(
+            androidVersion = deviceAndroidLabel,
+            kernelVersion = kernelVersion,
+            kernelBranch = kernelBranch,
+            recommendedArtifact = "vpnhide-zygisk.zip",
+            recommendedGkiVariant = null,
+            preferKmod = false,
+        )
     }
 
     fun readKmodLoadStatus(currentBootId: String): KmodLoadStatus? {
@@ -615,12 +681,29 @@ internal fun loadDashboardState(
     //    all (non-GKI / unsupported combo) — we recommend zygisk instead so
     //    the user doesn't wait for the kmod to "just work".
     val recommendedKmi = kernelRecommendation?.recommendedGkiVariant
+    // Two cross-cutting gates on kmod warnings:
+    //   !kmodRaw.active — an active kmod (/proc/vpnhide_targets present)
+    //     is empirical proof the installation works, so a heuristic
+    //     saying otherwise is wrong. Applied to every warning below.
+    //   kmodLoadStatus?.freshForCurrentBoot == true (AmbiguousLoadFailed
+    //     only) — that warning is specifically about "the module we
+    //     installed tried to insmod this boot and failed, pick the
+    //     other candidate", so it only makes sense once post-fs-data
+    //     has actually attempted a load. The other warnings are
+    //     deterministic from the variant stamp / kernel-series tables
+    //     and are valid even before the first post-install boot.
+    // For an ambiguous recommendation (variantAmbiguous=true), either
+    // candidate is a valid install, so kmodVariantMismatch must check
+    // both recommendedGkiVariant AND alternativeGkiVariant before
+    // deciding it's a real mismatch.
     val kmodVariantMismatch =
         kmodRaw is ModuleState.Installed &&
+            !kmodRaw.active &&
             kernelRecommendation?.preferKmod == true &&
             recommendedKmi != null &&
             kmodRaw.gkiVariant != null &&
-            kmodRaw.gkiVariant != recommendedKmi
+            kmodRaw.gkiVariant != recommendedKmi &&
+            kmodRaw.gkiVariant != kernelRecommendation.alternativeGkiVariant
     val kmodUnknownVariantBroken =
         kmodRaw is ModuleState.Installed &&
             !kmodRaw.active &&
@@ -628,13 +711,29 @@ internal fun loadDashboardState(
             kernelRecommendation?.preferKmod == true
     val kmodOnUnsupportedKernel =
         kmodRaw is ModuleState.Installed &&
+            !kmodRaw.active &&
             kernelRecommendation != null &&
             !kernelRecommendation.preferKmod
+    // User installed one of the two candidates for an ambiguous GKI series
+    // (5.10 / 5.15) and it failed to load this boot — suggest the other.
+    val kmodAmbiguousLoadFailed =
+        kmodRaw is ModuleState.Installed &&
+            !kmodRaw.active &&
+            kmodLoadStatus?.freshForCurrentBoot == true &&
+            kernelRecommendation?.variantAmbiguous == true &&
+            kmodRaw.gkiVariant != null &&
+            (
+                kmodRaw.gkiVariant == kernelRecommendation.recommendedGkiVariant ||
+                    kmodRaw.gkiVariant == kernelRecommendation.alternativeGkiVariant
+            )
     val kprobesMissing =
         kmodLoadStatus?.freshForCurrentBoot == true && kmodLoadStatus.kretprobes == "n"
-    // Priority matches the Error emission below so the card color agrees with
-    // the banner: kprobes-missing first, then unsupported-kernel, then wrong-
-    // variant, then unknown-variant-inactive.
+    // Priority matches the Error emission below so the card color agrees
+    // with the banner: kprobes-missing first, then unsupported-kernel,
+    // then wrong-variant, then unknown-variant-inactive, then
+    // ambiguous-load-failed (falls to this only when the installed kmod is
+    // one of the ambiguous candidates — the mismatch branches above already
+    // excluded both candidates from "wrong variant").
     val kmodBrokenReason: KmodBrokenReason? =
         when {
             kmodRaw !is ModuleState.Installed -> null
@@ -642,6 +741,7 @@ internal fun loadDashboardState(
             kmodOnUnsupportedKernel -> KmodBrokenReason.UnsupportedKernel
             kmodVariantMismatch -> KmodBrokenReason.WrongVariant
             kmodUnknownVariantBroken -> KmodBrokenReason.UnknownVariantInactive
+            kmodAmbiguousLoadFailed -> KmodBrokenReason.AmbiguousLoadFailed
             else -> null
         }
     val kmod: ModuleState =
@@ -914,6 +1014,23 @@ internal fun loadDashboardState(
                     res.getString(
                         R.string.dashboard_issue_kmod_unknown_variant,
                         recommendedArtifact,
+                    ),
+                )
+            }
+
+            kmodAmbiguousLoadFailed -> {
+                val installed = (kmod as ModuleState.Installed).gkiVariant
+                val tryArtifact =
+                    if (installed == kernelRecommendation?.recommendedGkiVariant) {
+                        kernelRecommendation.alternativeArtifact
+                    } else {
+                        kernelRecommendation?.recommendedArtifact
+                    }
+                err(
+                    res.getString(
+                        R.string.dashboard_issue_kmod_ambiguous_try_alternative,
+                        installed ?: "?",
+                        tryArtifact ?: "?",
                     ),
                 )
             }

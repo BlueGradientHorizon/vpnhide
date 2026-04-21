@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -231,6 +232,7 @@ private fun ModuleCard(
                     KmodBrokenReason.UnsupportedKernel -> R.string.dashboard_kmod_broken_unsupported_kernel
                     KmodBrokenReason.MissingKprobes -> R.string.dashboard_kmod_broken_no_kprobes
                     KmodBrokenReason.UnknownVariantInactive -> R.string.dashboard_kmod_broken_unknown_variant
+                    KmodBrokenReason.AmbiguousLoadFailed -> R.string.dashboard_kmod_broken_ambiguous
                     null -> null
                 }
             ModuleCardShell(
@@ -403,19 +405,52 @@ private fun NativeInstallRecommendationCard(recommendation: NativeInstallRecomme
                     ),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // Disambiguate the GKI KMI tag baked into uname -r (e.g.
+            // "android12-5.10") from the device's Android OS release on
+            // devices where they differ — common on old Pixels still on
+            // an android12 KMI kernel under an Android 14/15 ROM. Hide
+            // the note when both match (would just be noise) or when
+            // uname -r carries no KMI tag at all.
+            val kmiBranch = recommendation.kernelBranch
+            if (kmiBranch != null && kmiBranch != recommendation.androidVersion) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text =
+                        stringResource(
+                            R.string.dashboard_install_recommendation_kmi_note,
+                            kmiBranch.replace(" ", "").lowercase(),
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Spacer(Modifier.height(8.dp))
+            val alternative = recommendation.alternativeArtifact
             Text(
                 text =
-                    if (recommendation.preferKmod) {
-                        stringResource(
-                            R.string.dashboard_install_recommendation_kmod,
-                            recommendation.recommendedArtifact,
-                        )
-                    } else {
-                        stringResource(
-                            R.string.dashboard_install_recommendation_zygisk,
-                            recommendation.recommendedArtifact,
-                        )
+                    when {
+                        !recommendation.preferKmod -> {
+                            stringResource(
+                                R.string.dashboard_install_recommendation_zygisk,
+                                recommendation.recommendedArtifact,
+                            )
+                        }
+
+                        recommendation.variantAmbiguous && alternative != null -> {
+                            stringResource(
+                                R.string.dashboard_install_recommendation_kmod_ambiguous,
+                                recommendation.recommendedArtifact,
+                                alternative,
+                            )
+                        }
+
+                        else -> {
+                            stringResource(
+                                R.string.dashboard_install_recommendation_kmod,
+                                recommendation.recommendedArtifact,
+                            )
+                        }
                     },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
