@@ -83,6 +83,7 @@
     <string name="vpn_off_retry">Повторить</string>
     <string name="dashboard_install_recommendation_title">Рекомендация по установке</string>
     <string name="dashboard_install_recommendation_device">Ваше устройство: %1$s, ядро %2$s</string>
+    <string name="dashboard_install_recommendation_kmi_note">«%1$s» в версии ядра — это GKI Kernel Module Interface, обозначающий бинарный интерфейс ядра для модулей, а не версию Android на устройстве.</string>
     <string name="dashboard_install_recommendation_kmod">Рекомендуется модуль ядра. Скачайте %1$s.</string>
     <string name="dashboard_install_recommendation_kmod_ambiguous">Рекомендуется модуль ядра. GKI-ветку вашего ядра не удаётся определить из uname -r, поэтому сначала попробуйте %1$s; если после ребута он не загрузится — установите %2$s.</string>
     <string name="dashboard_install_recommendation_zygisk">Для вашего устройства модуль ядра не поддерживается. Установите %1$s.</string>

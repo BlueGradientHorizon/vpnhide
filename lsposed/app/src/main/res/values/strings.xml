@@ -114,6 +114,7 @@
     <string name="vpn_off_retry">Retry</string>
     <string name="dashboard_install_recommendation_title">Installation recommendation</string>
     <string name="dashboard_install_recommendation_device">Your device: %1$s, kernel %2$s</string>
+    <string name="dashboard_install_recommendation_kmi_note">\"%1$s\" in the kernel version is the GKI Kernel Module Interface tag — it identifies the kernel\'s binary interface to modules, not your Android OS release.</string>
     <string name="dashboard_install_recommendation_kmod">Kernel module is recommended. Download %1$s.</string>
     <string name="dashboard_install_recommendation_kmod_ambiguous">Kernel module is recommended. Your kernel\'s GKI branch isn\'t identifiable from uname -r, so try %1$s first; if it doesn\'t load after reboot, install %2$s instead.</string>
     <string name="dashboard_install_recommendation_zygisk">Kernel module is not supported for your device. Install %1$s.</string>
