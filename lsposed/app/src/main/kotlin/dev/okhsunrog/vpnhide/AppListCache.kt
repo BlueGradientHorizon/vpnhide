@@ -84,11 +84,26 @@ internal object AppListCache {
                                     if (info == null) loadArchiveApplicationInfo(pm, meta.apkPath) else null
                                 val effectiveInfo = info ?: archiveInfo
 
+                                // Archive-parsed ApplicationInfo doesn't carry
+                                // FLAG_SYSTEM (that bit is attached by PM at
+                                // install time, not stored in the manifest), so
+                                // for secondary-only packages we'd misclassify
+                                // every system app as user-installed. Fall back
+                                // to the APK path: /data/app/... is user-
+                                // installed, everything else is baked into the
+                                // system image.
+                                val isSystem =
+                                    if (info != null) {
+                                        (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                                    } else {
+                                        !meta.apkPath.startsWith("/data/app/")
+                                    }
+
                                 AppSummary(
                                     packageName = pkg,
                                     label = effectiveInfo?.loadLabel(pm)?.toString() ?: pkg,
                                     icon = effectiveInfo?.let { runCatching { pm.getApplicationIcon(it) }.getOrNull() },
-                                    isSystem = effectiveInfo?.let { (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0 } ?: false,
+                                    isSystem = isSystem,
                                     userIds = meta.userIds,
                                 )
                             }.sortedBy { it.label.lowercase() }
