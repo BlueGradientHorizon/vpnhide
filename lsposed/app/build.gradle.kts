@@ -11,16 +11,22 @@ android {
     namespace = "dev.okhsunrog.vpnhide"
     compileSdk = 35
 
-    // Effective build version from ../scripts/build-version.sh:
+    // Effective build version from ../scripts/build-version.py:
     //   release tag    -> "0.6.2"
     //   dev build      -> "0.6.1-5-gabc1234" (+"-dirty" if uncommitted)
     //   no git         -> VERSION file
+    // Python instead of bash so Windows contributors can build without WSL.
+    // Script is stdlib-only — no `uv` / pip install needed. `python` on
+    // Windows, `python3` elsewhere: Ubuntu 22.04+ ships only the latter,
+    // Windows python.org / Store installer ships only the former.
+    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+    val pythonExe = if (isWindows) "python" else "python3"
     val buildVersion: String =
         providers
             .exec {
                 commandLine(
-                    "bash",
-                    rootProject.projectDir.parentFile.resolve("scripts/build-version.sh").absolutePath,
+                    pythonExe,
+                    rootProject.projectDir.parentFile.resolve("scripts/build-version.py").absolutePath,
                 )
             }.standardOutput.asText
             .get()
