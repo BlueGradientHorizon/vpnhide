@@ -196,6 +196,130 @@ internal data class KmodLoadStatus(
 
 private const val TAG = "VpnHide-Dashboard"
 
+internal fun parseKernelSeries(raw: String): String? = Regex("""\b(\d+\.\d+)""").find(raw)?.groupValues?.get(1)
+
+internal fun parseKernelAndroidBranch(raw: String): String? =
+    Regex("""android(\d+)""")
+        .find(raw)
+        ?.groupValues
+        ?.get(1)
+        ?.let { "Android $it" }
+
+/**
+ * Pick the right native-module artifact for the device based on its
+ * kernel version (from `uname -r`) and Android OS label (from
+ * `Build.VERSION.RELEASE`). Pulled out as a pure top-level function
+ * so it can be unit-tested without a real device — the `uname -r`
+ * read and `Build.VERSION` probe happen in the caller.
+ *
+ * Strategy, in order:
+ *  1. Exact `(GKI KMI × kernel series)` match from the supported
+ *     shipping matrix → specific kmod zip, preferKmod=true.
+ *  2. KMI tag missing from `uname -r` (custom kernel stripped it)
+ *     but the kernel series is GKI-shipping:
+ *       - 6.1 / 6.6 / 6.12 have a single shipping variant each →
+ *         deterministic kmod recommendation, preferKmod=true.
+ *       - 5.10 / 5.15 have two shipping variants each → return the
+ *         primary plus an alternative via `variantAmbiguous=true`;
+ *         the UI shows "try primary, if it doesn't load try alt".
+ *  3. Pre-GKI series (<5.10) or unparseable kernel version → fall
+ *     back to zygisk (preferKmod=false) since we have no kmod
+ *     binaries that can load against such kernels' Module.symvers.
+ *
+ * Returns `null` only if [kernelRaw] is blank (no uname output).
+ * `deviceAndroidLabel` is only reflected back in the returned
+ * `androidVersion` for display — it's never used for KMI matching
+ * (those spaces are independent: an Android 15 ROM routinely runs
+ * an android12 KMI kernel).
+ */
+internal fun buildNativeInstallRecommendation(
+    kernelRaw: String,
+    deviceAndroidLabel: String,
+): NativeInstallRecommendation? {
+    val kernelVersion = kernelRaw.trim().ifBlank { return null }
+    val kernelSeries = parseKernelSeries(kernelVersion)
+    val kernelBranch = parseKernelAndroidBranch(kernelVersion) // GKI KMI
+
+    data class KmiMatch(
+        val kmi: String,
+        val zip: String,
+    )
+
+    val exact: KmiMatch? =
+        when (kernelBranch to kernelSeries) {
+            "Android 12" to "5.10" -> KmiMatch("android12-5.10", "vpnhide-kmod-android12-5.10.zip")
+            "Android 13" to "5.10" -> KmiMatch("android13-5.10", "vpnhide-kmod-android13-5.10.zip")
+            "Android 13" to "5.15" -> KmiMatch("android13-5.15", "vpnhide-kmod-android13-5.15.zip")
+            "Android 14" to "5.15" -> KmiMatch("android14-5.15", "vpnhide-kmod-android14-5.15.zip")
+            "Android 14" to "6.1" -> KmiMatch("android14-6.1", "vpnhide-kmod-android14-6.1.zip")
+            "Android 15" to "6.6" -> KmiMatch("android15-6.6", "vpnhide-kmod-android15-6.6.zip")
+            "Android 16" to "6.12" -> KmiMatch("android16-6.12", "vpnhide-kmod-android16-6.12.zip")
+            else -> null
+        }
+    if (exact != null) {
+        return NativeInstallRecommendation(
+            androidVersion = deviceAndroidLabel,
+            kernelVersion = kernelVersion,
+            kernelBranch = kernelBranch,
+            recommendedArtifact = exact.zip,
+            recommendedGkiVariant = exact.kmi,
+            preferKmod = true,
+        )
+    }
+
+    val fallback: Pair<KmiMatch, KmiMatch?>? =
+        when (kernelSeries) {
+            "5.10" -> {
+                KmiMatch("android12-5.10", "vpnhide-kmod-android12-5.10.zip") to
+                    KmiMatch("android13-5.10", "vpnhide-kmod-android13-5.10.zip")
+            }
+
+            "5.15" -> {
+                KmiMatch("android13-5.15", "vpnhide-kmod-android13-5.15.zip") to
+                    KmiMatch("android14-5.15", "vpnhide-kmod-android14-5.15.zip")
+            }
+
+            "6.1" -> {
+                KmiMatch("android14-6.1", "vpnhide-kmod-android14-6.1.zip") to null
+            }
+
+            "6.6" -> {
+                KmiMatch("android15-6.6", "vpnhide-kmod-android15-6.6.zip") to null
+            }
+
+            "6.12" -> {
+                KmiMatch("android16-6.12", "vpnhide-kmod-android16-6.12.zip") to null
+            }
+
+            else -> {
+                null
+            }
+        }
+    if (fallback != null) {
+        val (primary, alternative) = fallback
+        return NativeInstallRecommendation(
+            androidVersion = deviceAndroidLabel,
+            kernelVersion = kernelVersion,
+            kernelBranch = kernelBranch,
+            recommendedArtifact = primary.zip,
+            recommendedGkiVariant = primary.kmi,
+            preferKmod = true,
+            variantAmbiguous = alternative != null,
+            alternativeArtifact = alternative?.zip,
+            alternativeGkiVariant = alternative?.kmi,
+        )
+    }
+
+    return NativeInstallRecommendation(
+        androidVersion = deviceAndroidLabel,
+        kernelVersion = kernelVersion,
+        kernelBranch = kernelBranch,
+        recommendedArtifact = "vpnhide-zygisk.zip",
+        recommendedGkiVariant = null,
+        preferKmod = false,
+    )
+}
+
 internal fun loadDashboardState(
     cm: ConnectivityManager,
     context: android.content.Context,
@@ -334,115 +458,6 @@ internal fun loadDashboardState(
                 Build.VERSION.RELEASE
             }.substringBefore('.')
         return "Android $release"
-    }
-
-    fun parseKernelSeries(raw: String): String? = Regex("""\b(\d+\.\d+)""").find(raw)?.groupValues?.get(1)
-
-    fun parseKernelAndroidBranch(raw: String): String? =
-        Regex("""android(\d+)""")
-            .find(raw)
-            ?.groupValues
-            ?.get(1)
-            ?.let { "Android $it" }
-
-    fun buildNativeInstallRecommendation(): NativeInstallRecommendation? {
-        val (_, kernelRaw) = suExec("uname -r 2>/dev/null")
-        val kernelVersion = kernelRaw.trim().ifBlank { return null }
-        val kernelSeries = parseKernelSeries(kernelVersion)
-        val kernelBranch = parseKernelAndroidBranch(kernelVersion) // GKI KMI
-        // User-facing device label only — never used for KMI matching below.
-        val deviceAndroidLabel = androidMajorVersionLabel()
-
-        data class KmiMatch(
-            val kmi: String,
-            val zip: String,
-        )
-
-        // Try exact KMI × series match. kernelBranch here is the GKI KMI
-        // extracted from uname -r, NOT the phone's Android OS release —
-        // these are independent spaces (an Android 15 ROM commonly runs an
-        // android12 KMI kernel), so we must not fall back to
-        // Build.VERSION.RELEASE here.
-        val exact: KmiMatch? =
-            when (kernelBranch to kernelSeries) {
-                "Android 12" to "5.10" -> KmiMatch("android12-5.10", "vpnhide-kmod-android12-5.10.zip")
-                "Android 13" to "5.10" -> KmiMatch("android13-5.10", "vpnhide-kmod-android13-5.10.zip")
-                "Android 13" to "5.15" -> KmiMatch("android13-5.15", "vpnhide-kmod-android13-5.15.zip")
-                "Android 14" to "5.15" -> KmiMatch("android14-5.15", "vpnhide-kmod-android14-5.15.zip")
-                "Android 14" to "6.1" -> KmiMatch("android14-6.1", "vpnhide-kmod-android14-6.1.zip")
-                "Android 15" to "6.6" -> KmiMatch("android15-6.6", "vpnhide-kmod-android15-6.6.zip")
-                "Android 16" to "6.12" -> KmiMatch("android16-6.12", "vpnhide-kmod-android16-6.12.zip")
-                else -> null
-            }
-        if (exact != null) {
-            return NativeInstallRecommendation(
-                androidVersion = deviceAndroidLabel,
-                kernelVersion = kernelVersion,
-                kernelBranch = kernelBranch,
-                recommendedArtifact = exact.zip,
-                recommendedGkiVariant = exact.kmi,
-                preferKmod = true,
-            )
-        }
-
-        // No KMI in uname (custom kernel stripped it). Fall back on kernel
-        // series alone. For 6.1 / 6.6 / 6.12 we ship a single KMI variant —
-        // the recommendation is still deterministic. For 5.10 / 5.15 two
-        // variants ship, so we surface both via variantAmbiguous and let
-        // the UI tell the user to try the alternative if the primary fails.
-        val fallback: Pair<KmiMatch, KmiMatch?>? =
-            when (kernelSeries) {
-                "5.10" -> {
-                    KmiMatch("android12-5.10", "vpnhide-kmod-android12-5.10.zip") to
-                        KmiMatch("android13-5.10", "vpnhide-kmod-android13-5.10.zip")
-                }
-
-                "5.15" -> {
-                    KmiMatch("android13-5.15", "vpnhide-kmod-android13-5.15.zip") to
-                        KmiMatch("android14-5.15", "vpnhide-kmod-android14-5.15.zip")
-                }
-
-                "6.1" -> {
-                    KmiMatch("android14-6.1", "vpnhide-kmod-android14-6.1.zip") to null
-                }
-
-                "6.6" -> {
-                    KmiMatch("android15-6.6", "vpnhide-kmod-android15-6.6.zip") to null
-                }
-
-                "6.12" -> {
-                    KmiMatch("android16-6.12", "vpnhide-kmod-android16-6.12.zip") to null
-                }
-
-                else -> {
-                    null
-                }
-            }
-        if (fallback != null) {
-            val (primary, alternative) = fallback
-            return NativeInstallRecommendation(
-                androidVersion = deviceAndroidLabel,
-                kernelVersion = kernelVersion,
-                kernelBranch = kernelBranch,
-                recommendedArtifact = primary.zip,
-                recommendedGkiVariant = primary.kmi,
-                preferKmod = true,
-                variantAmbiguous = alternative != null,
-                alternativeArtifact = alternative?.zip,
-                alternativeGkiVariant = alternative?.kmi,
-            )
-        }
-
-        // Pre-GKI series (<5.10) or unparseable — kmod binaries we ship
-        // can't load against such kernels' Module.symvers. Recommend zygisk.
-        return NativeInstallRecommendation(
-            androidVersion = deviceAndroidLabel,
-            kernelVersion = kernelVersion,
-            kernelBranch = kernelBranch,
-            recommendedArtifact = "vpnhide-zygisk.zip",
-            recommendedGkiVariant = null,
-            preferKmod = false,
-        )
     }
 
     fun readKmodLoadStatus(currentBootId: String): KmodLoadStatus? {
@@ -666,7 +681,8 @@ internal fun loadDashboardState(
     // Recommendation based purely on the kernel — used by the install card,
     // the "kmod-capable kernel, only zygisk installed" warning (W1), and the
     // wrong-variant detection below.
-    val kernelRecommendation = buildNativeInstallRecommendation()
+    val (_, kernelRaw) = suExec("uname -r 2>/dev/null")
+    val kernelRecommendation = buildNativeInstallRecommendation(kernelRaw, androidMajorVersionLabel())
     val kmodLoadStatus = readKmodLoadStatus(currentBootId.trim())
     VpnHideLog.i(TAG, "kmodLoadStatus=$kmodLoadStatus")
 
