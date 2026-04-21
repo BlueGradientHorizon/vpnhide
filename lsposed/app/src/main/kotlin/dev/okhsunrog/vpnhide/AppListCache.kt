@@ -28,20 +28,28 @@ internal data class AppSummary(
 )
 
 /**
- * Append the user-ID list to an app label so users can tell that
+ * Append a profile list to an app label so users can tell that
  * Telegram-in-Second-Space and Telegram-in-main are the same target.
  * Suppresses the suffix when the app is only in the current profile —
  * otherwise every row in the list reads "Cromite (0)", "Chrome (0)",
  * ... for users who don't even have a secondary profile.
+ *
+ * When [userNames] contains an entry for a user ID, its friendly name
+ * ("Work", "Second Space") is used; otherwise we fall back to the raw
+ * numeric ID. This keeps the helper usable even before the user-name
+ * map is loaded (no root / parse failure).
  */
 internal fun labelWithUsers(
     label: String,
     userIds: List<Int>,
+    userNames: Map<Int, String> = emptyMap(),
 ): String {
     if (userIds.isEmpty()) return label
     val currentUser = Process.myUid() / 100000
     val onlyCurrent = userIds.size == 1 && userIds[0] == currentUser
-    return if (onlyCurrent) label else "$label (${userIds.joinToString(", ")})"
+    if (onlyCurrent) return label
+    val formatted = userIds.joinToString(", ") { userNames[it] ?: it.toString() }
+    return "$label ($formatted)"
 }
 
 /**
@@ -57,6 +65,14 @@ internal fun labelWithUsers(
 internal object AppListCache {
     private val _apps = MutableStateFlow<List<AppSummary>?>(null)
     val apps: StateFlow<List<AppSummary>?> = _apps.asStateFlow()
+
+    /** user_id → friendly profile name (e.g. 10 → "Work"). Populated
+     * from `pm list users` alongside the package scan. Empty map if
+     * root isn't available or parsing failed — `labelWithUsers` falls
+     * back to numeric IDs in that case.
+     */
+    private val _userNames = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val userNames: StateFlow<Map<Int, String>> = _userNames.asStateFlow()
 
     private val _refreshCounter = MutableStateFlow(0)
     val refreshCounter: StateFlow<Int> = _refreshCounter.asStateFlow()
@@ -92,7 +108,8 @@ internal object AppListCache {
             val loaded =
                 withContext(Dispatchers.IO) {
                     val pm = appContext.packageManager
-                    val packages = loadPackagesViaRoot()
+                    val (packages, users) = loadPackagesAndUsersViaRoot()
+                    _userNames.value = users
                     if (packages.isNotEmpty()) {
                         packages.entries
                             .map { (pkg, meta) ->
@@ -152,23 +169,39 @@ internal object AppListCache {
         val userIds: List<Int>,
     )
 
+    private const val USERS_SENTINEL = "===VPNHIDE-USERS-BOUNDARY==="
+
     /**
-     * Enumerate every installed package across every user profile (main +
-     * work profile / MIUI Second Space / Private Space / secondary users)
-     * in one `su` call. `-U -f --user all` gives both the APK path and
-     * the UID per (pkg, user) tuple, which was previously done with three
-     * separate root roundtrips (~150ms of wasted `su` spin-up per refresh).
+     * Enumerate every installed package and every user profile in a
+     * single `su` invocation. `pm list packages -U -f --user all` gives
+     * APK path + UID per (pkg, user) tuple; `pm list users` gives the
+     * friendly profile names ("Work", "Second Space") that the UI
+     * renders instead of raw user IDs. Two commands, one `su` spawn —
+     * separated by a sentinel the parser splits on.
      *
-     * Output format is one of:
+     * Packages output is one of:
      *   package:<apk_path>=<pkg> uid:<uid>            (single-user)
      *   package:<apk_path>=<pkg> uid:<uid>,<uid>,...  (AOSP --user all)
      *   package:<apk_path>=<pkg> uid:<uid>            (repeated per user
      *                                                  on some ROMs)
-     * So the parser merges UIDs across duplicate lines for the same pkg.
+     * Users output is:
+     *   UserInfo{<id>:<name>:<flags>} [running ...]
      */
-    private fun loadPackagesViaRoot(): Map<String, PkgMeta> {
-        val (exitCode, raw) = suExec("pm list packages -U -f --user all 2>/dev/null")
-        if (exitCode != 0) return emptyMap()
+    private fun loadPackagesAndUsersViaRoot(): Pair<Map<String, PkgMeta>, Map<Int, String>> {
+        val (exitCode, raw) =
+            suExec(
+                "pm list packages -U -f --user all 2>/dev/null; " +
+                    "echo '$USERS_SENTINEL'; " +
+                    "pm list users 2>/dev/null",
+            )
+        if (exitCode != 0) return emptyMap<String, PkgMeta>() to emptyMap()
+        val parts = raw.split(USERS_SENTINEL, limit = 2)
+        val packages = parsePackages(parts[0])
+        val users = if (parts.size > 1) parseUsers(parts[1]) else emptyMap()
+        return packages to users
+    }
+
+    private fun parsePackages(raw: String): Map<String, PkgMeta> {
         val out = LinkedHashMap<String, PkgMeta>()
         raw
             .lineSequence()
@@ -202,6 +235,23 @@ internal object AppListCache {
                         )
                     }
             }
+        return out
+    }
+
+    // `UserInfo{10:Work:1030}` — flags are trailing hex, name is
+    // everything between the first `:` and the last `:`. The lazy
+    // name-group (.*?) combined with a greedy flags-group anchored to
+    // `}` handles names that contain `:` (rare, but Android allows it).
+    private val userLine = Regex("""UserInfo\{(\d+):(.*?):[0-9a-fA-F]+\}""")
+
+    private fun parseUsers(raw: String): Map<Int, String> {
+        val out = LinkedHashMap<Int, String>()
+        raw.lineSequence().forEach { line ->
+            val m = userLine.find(line) ?: return@forEach
+            val id = m.groupValues[1].toIntOrNull() ?: return@forEach
+            val name = m.groupValues[2].trim()
+            if (name.isNotEmpty()) out[id] = name
+        }
         return out
     }
 
