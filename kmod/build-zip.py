@@ -63,7 +63,7 @@ def main() -> int:
     if clang_base.exists():
         clang_dirs = sorted(d for d in clang_base.iterdir() if d.is_dir() and d.name.startswith("clang-"))
         if clang_dirs:
-            os.environ["CLANG_DIR"] = str(clang_dirs[-1])
+            os.environ["CLANG_DIR"] = str(clang_dirs[-1] / "bin")
 
     # Build the kernel module (env vars loaded by direnv from .env)
     kmod_c = script_dir / KMOD_C
