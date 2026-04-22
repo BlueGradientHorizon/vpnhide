@@ -92,7 +92,7 @@ jobs:
           cd kmod
           ./build-zip.py --kdir $KDIR --kmi ${{ matrix.kmi }} --out vpnhide-kmod-${{ matrix.kmi }}.zip
           apt-get update -qq && apt-get install -y -qq tree >/dev/null
-          tree .
+          cd $GITHUB_WORKSPACE && tree .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
