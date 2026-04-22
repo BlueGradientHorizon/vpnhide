@@ -84,31 +84,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build kernel module
-        run: |
-          CLANG=$(echo /opt/ddk/clang/clang-r*/bin)
-          make -C $KDIR M=$GITHUB_WORKSPACE/kmod \
-              ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-              CC=$CLANG/clang LD=$CLANG/ld.lld \
-              AR=$CLANG/llvm-ar NM=$CLANG/llvm-nm \
-              OBJCOPY=$CLANG/llvm-objcopy \
-              OBJDUMP=$CLANG/llvm-objdump \
-              STRIP=$CLANG/llvm-strip \
-              CROSS_COMPILE=aarch64-linux-gnu- \
-              modules
-          $CLANG/llvm-strip -d kmod/vpnhide_kmod.ko
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Package KSU module zip
+      - name: Build and package kernel module
         run: |
-          apt-get update -qq && apt-get install -y -qq zip git >/dev/null
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          BUILD_VERSION=$(./scripts/build-version.py)
-          echo "Stamping kmod module.prop version=v${BUILD_VERSION} gkiVariant=${{ matrix.kmi }}"
-          cp kmod/vpnhide_kmod.ko kmod/module/
-          sed -i "s|^version=.*|version=v${BUILD_VERSION}|" kmod/module/module.prop
-          echo "gkiVariant=${{ matrix.kmi }}" >> kmod/module/module.prop
-          echo "updateJson=https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-json/update-kmod-${{ matrix.kmi }}.json" >> kmod/module/module.prop
-          (cd kmod/module && zip -qr "$GITHUB_WORKSPACE/vpnhide-kmod-${{ matrix.kmi }}.zip" .)
+          cd kmod
+          ./build-zip.py --kdir $KDIR --kmi ${{ matrix.kmi }} --out vpnhide-kmod-${{ matrix.kmi }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

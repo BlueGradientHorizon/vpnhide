@@ -29,6 +29,9 @@ MAKE_ARGS := -C $(KERNEL_SRC) M=$(CURDIR) \
 all:
 	$(MAKE) $(MAKE_ARGS) modules
 
+strip: all
+	$(STRIP) -d $(CURDIR)/vpnhide_kmod.ko
+
 clean:
 	$(MAKE) $(MAKE_ARGS) clean
 
