@@ -56,7 +56,7 @@ keytool -genkey -v -keystore ~/vpnhide.jks \
 ### zygisk module
 
 ```sh
-cd zygisk && ./build-zip.sh
+cd zygisk && ./build-zip.py
 # → zygisk/target/vpnhide-zygisk.zip
 ```
 

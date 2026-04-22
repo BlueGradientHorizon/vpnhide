@@ -70,7 +70,7 @@ cp .env.example .env
 # Edit .env with paths to your kernel source and clang toolchain
 direnv allow
 make
-./build-zip.sh
+./build-zip.py
 ```
 
 See `.env.example` for the required variables. You need a prepared kernel source tree with headers and `Module.symvers`.

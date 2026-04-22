@@ -138,7 +138,7 @@ jobs:
           UPDATE_JSON_URL: https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-json/update-zygisk.json
         run: |
           cd zygisk
-          ./build-zip.sh
+          ./build-zip.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -201,7 +201,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq zip >/dev/null
           cd portshide
-          ./build-zip.sh
+          ./build-zip.py
           mv vpnhide-ports.zip "$GITHUB_WORKSPACE/vpnhide-ports.zip"
 
       - name: Upload artifact

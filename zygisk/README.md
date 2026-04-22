@@ -74,7 +74,7 @@ Requirements:
 Build and package:
 
 ```bash
-./build-zip.sh
+./build-zip.py
 # Output: target/vpnhide-zygisk.zip (~180 KB)
 ```
 
@@ -131,7 +131,7 @@ VPN interface prefixes: `tun`, `ppp`, `tap`, `wg`, `ipsec`, `xfrm`, `utun`, `l2t
 - `build.rs` -- drives CMake on the shadowhook submodule
 - `third_party/android-inline-hook/` -- submodule (our shadowhook fork)
 - `module/` -- KernelSU/Magisk module metadata
-- `build-zip.sh` -- cross-compile + package script
+- `build-zip.py` -- cross-compile + package script
 
 ## License
 
