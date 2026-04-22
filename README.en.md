@@ -194,8 +194,8 @@ Rows 1-6, 21, and 24 are the only vectors reachable by regular apps. Everything 
 
 ## Building from source
 
-- **kmod**: `cd kmod && make && ./build-zip.sh` — see [kmod/BUILDING.md](kmod/BUILDING.md)
-- **zygisk**: `cd zygisk && ./build-zip.sh` (Rust + NDK + cargo-ndk)
+- **kmod**: `cd kmod && make && ./build-zip.py` — see [kmod/BUILDING.md](kmod/BUILDING.md)
+- **zygisk**: `cd zygisk && ./build-zip.py` (Rust + NDK + cargo-ndk)
 - **lsposed**: `cd lsposed && ./gradlew assembleDebug` (JDK 17 + Rust + NDK + cargo-ndk)
 
 ## Verified against

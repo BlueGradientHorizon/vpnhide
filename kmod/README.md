@@ -34,7 +34,7 @@ CI builds are provided for all 7 GKI generations: `android12-5.10` through `andr
 See [BUILDING.md](BUILDING.md) for the full guide (DDK Docker build, kernel source preparation, toolchain setup, `Module.symvers` generation).
 
 ```bash
-cd kmod && ./build-zip.sh
+cd kmod && ./build-zip.py
 ```
 
 ## Install

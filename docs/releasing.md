@@ -48,7 +48,7 @@ Update-json **must** be committed *after* the GitHub release is **published** (i
 
 ## Build versions
 
-Every packaging step runs `./scripts/build-version.sh` to compute the version string stamped into the artifact:
+Every packaging step runs `./scripts/build-version.py` to compute the version string stamped into the artifact:
 
 - **On a release tag `vX.Y.Z`:** `X.Y.Z`
 - **N commits after the nearest tag:** `X.Y.Z-N-gSHA` (the git describe format)
@@ -61,6 +61,6 @@ This string goes into:
 - APK `versionName` (visible in Android Settings → Apps, diagnostic debug zip, `BuildConfig.VERSION_NAME`)
 - Inside the zip filenames (only for release tags; dev artifacts in CI keep a stable name)
 
-The committed `module.prop` files are **not** modified — `build-zip.sh` stages a copy, patches the version there, and zips. `lsposed/app/build.gradle.kts` evaluates `build-version.sh` at configure time and sets `versionName` dynamically.
+The committed `module.prop` files are **not** modified — `build-zip.py` stages a copy, patches the version there, and zips. `lsposed/app/build.gradle.kts` evaluates `build-version.py` at configure time and sets `versionName` dynamically.
 
 `versionCode` stays at the value baked in by the last `release.py` run (monotonically increasing integer required by Android/Magisk).

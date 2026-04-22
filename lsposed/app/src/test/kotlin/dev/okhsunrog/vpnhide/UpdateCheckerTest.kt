@@ -92,7 +92,7 @@ class BaseVersionTest {
 
     @Test
     fun `dirty suffix alone is stripped`() {
-        // build-version.sh emits `X.Y.Z-dirty` when HEAD is on a tag but
+        // build-version.py emits `X.Y.Z-dirty` when HEAD is on a tag but
         // the working tree has uncommitted changes.
         assertEquals("0.6.2", baseVersion("0.6.2-dirty"))
         assertEquals("0.6.2", baseVersion("v0.6.2-dirty"))

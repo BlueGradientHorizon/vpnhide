@@ -10,7 +10,7 @@ STAGING="module-staging"
 rm -rf "$STAGING"
 cp -a module "$STAGING"
 
-BUILD_VERSION="$(../scripts/build-version.sh)"
+BUILD_VERSION="$(../scripts/build-version.py)"
 sed -i "s|^version=.*|version=v${BUILD_VERSION}|" "$STAGING/module.prop"
 echo "Stamped module.prop version=v${BUILD_VERSION}"
 

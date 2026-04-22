@@ -102,7 +102,7 @@ jobs:
         run: |
           apt-get update -qq && apt-get install -y -qq zip git >/dev/null
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          BUILD_VERSION=$(./scripts/build-version.sh)
+          BUILD_VERSION=$(./scripts/build-version.py)
           echo "Stamping kmod module.prop version=v${BUILD_VERSION} gkiVariant=${{ matrix.kmi }}"
           cp kmod/vpnhide_kmod.ko kmod/module/
           sed -i "s|^version=.*|version=v${BUILD_VERSION}|" kmod/module/module.prop
@@ -150,7 +150,7 @@ jobs:
           UPDATE_JSON_URL: https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-json/update-zygisk.json
         run: |
           cd zygisk
-          ./build-zip.sh
+          ./build-zip.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -214,7 +214,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq zip >/dev/null
           cd portshide
-          ./build-zip.sh
+          ./build-zip.py
           mv vpnhide-ports.zip "$GITHUB_WORKSPACE/vpnhide-ports.zip"
 
       - name: Upload artifact

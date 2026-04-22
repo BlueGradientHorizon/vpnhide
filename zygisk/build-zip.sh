@@ -43,7 +43,7 @@ cp "$SO_SRC" "$STAGING/zygisk/arm64-v8a.so"
 # Stamp the effective build version into the staging module.prop without
 # touching the committed file. On a release tag this matches VERSION; on
 # any other commit the git suffix makes dev builds identifiable.
-BUILD_VERSION="$(../scripts/build-version.sh)"
+BUILD_VERSION="$(../scripts/build-version.py)"
 sed -i "s|^version=.*|version=v${BUILD_VERSION}|" "$STAGING/module.prop"
 echo "Stamped module.prop version=v${BUILD_VERSION}"
 
