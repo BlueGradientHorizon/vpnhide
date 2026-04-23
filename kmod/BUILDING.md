@@ -15,16 +15,9 @@ KMI=android14-6.1
 # Build the kernel module (run from repo root)
 docker run --rm -v $(pwd)/kmod:/work \
     ghcr.io/ylarod/ddk-min:${KMI}-20260313 sh -c "
-    CLANG=\$(echo /opt/ddk/clang/clang-r*/bin) && \
-    make -C /opt/ddk/kdir/${KMI} M=/work \
-        ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-        CC=\$CLANG/clang LD=\$CLANG/ld.lld \
-        AR=\$CLANG/llvm-ar NM=\$CLANG/llvm-nm \
-        OBJCOPY=\$CLANG/llvm-objcopy \
-        OBJDUMP=\$CLANG/llvm-objdump \
-        STRIP=\$CLANG/llvm-strip \
-        CROSS_COMPILE=aarch64-linux-gnu- \
-        modules"
+    CLANG_DIR=\$(echo /opt/ddk/clang/clang-r*/bin) \
+    KERNEL_SRC=/opt/ddk/kdir/${KMI} \
+    make"
 
 # Package as KSU module
 cp kmod/vpnhide_kmod.ko kmod/module/
@@ -43,17 +36,11 @@ KMI=android14-6.1
 
 podman run --rm --userns=keep-id -v "$(pwd)/kmod:/work:Z" \
     ghcr.io/ylarod/ddk-min:${KMI}-20260313 sh -c '
-    CLANG=$(echo /opt/ddk/clang/clang-r*/bin) && \
-    make -C /opt/ddk/kdir/'${KMI}' M=/work \
-        ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-        CC=$CLANG/clang LD=$CLANG/ld.lld \
-        AR=$CLANG/llvm-ar NM=$CLANG/llvm-nm \
-        OBJCOPY=$CLANG/llvm-objcopy \
-        OBJDUMP=$CLANG/llvm-objdump \
-        STRIP=$CLANG/llvm-strip \
-        CROSS_COMPILE=aarch64-linux-gnu- \
-        modules'
+    CLANG_DIR=\$(echo /opt/ddk/clang/clang-r*/bin) \
+    KERNEL_SRC=/opt/ddk/kdir/${KMI} \
+    make'
 
+# Package as KSU module
 cp kmod/vpnhide_kmod.ko kmod/module/
 (cd kmod/module && zip -qr ../../vpnhide-kmod.zip .)
 ```

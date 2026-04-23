@@ -77,7 +77,7 @@ jobs:
     container:
       image: ghcr.io/ylarod/ddk-min:${{ matrix.kmi }}-20260313
     env:
-      KDIR: /opt/ddk/kdir/${{ matrix.kmi }}
+      KMI: ${{ matrix.kmi }}
 
     steps:
       - uses: actions/checkout@v6
@@ -90,7 +90,7 @@ jobs:
       - name: Build and package kernel module
         run: |
           cd kmod
-          ./build-zip.py --kdir $KDIR --kmi ${{ matrix.kmi }} --out vpnhide-kmod-${{ matrix.kmi }}.zip
+          python3 ./build-zip.py --kmi $KMI
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -132,7 +132,7 @@ jobs:
           UPDATE_JSON_URL: https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-json/update-zygisk.json
         run: |
           cd zygisk
-          ./build-zip.py
+          python3 ./build-zip.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -194,9 +194,8 @@ jobs:
         env:
           UPDATE_JSON_URL: https://raw.githubusercontent.com/okhsunrog/vpnhide/main/update-json/update-ports.json
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq zip >/dev/null
           cd portshide
-          ./build-zip.py
+          python3 ./build-zip.py
           mv vpnhide-ports.zip "$GITHUB_WORKSPACE/vpnhide-ports.zip"
 
       - name: Upload artifact
