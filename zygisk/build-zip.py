@@ -68,6 +68,9 @@ def main() -> int:
     # Get build version
     build_version = get_build_version(script_dir.parent)
 
+    # Stamp the effective build version into the staging module.prop without
+    # touching the committed file. On a release tag this matches VERSION; on
+    # any other commit the git suffix makes dev builds identifiable.
     module_prop = staging / "module.prop"
     content = module_prop.read_text(encoding="utf-8")
     content = re.sub(r"^version=.*", f"version=v{build_version}", content, flags=re.MULTILINE)
